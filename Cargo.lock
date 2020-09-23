@@ -1406,6 +1406,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "metamask-wrapper"
+version = "1.0.0"
+dependencies = [
+ "solana-sdk",
+ "spl-token 2.0.5",
+]
+
+[[package]]
 name = "mime"
 version = "0.3.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"

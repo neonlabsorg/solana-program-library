@@ -9,6 +9,7 @@ members = [
   "token/cli",
   "token/program",
   "token/program-v3",
+  "metamask-wrapper/program",
 ]
 exclude = [
   "themis/client_bn",
