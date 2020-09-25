@@ -1,6 +1,6 @@
 #![deny(missing_docs)]
 
-//! A simple program that accepts a string of encoded characters and verifies that it parses. Currently handles UTF-8.
+//! A simple program that receives transfer operations from metamask-wrapper and transfers different tokens using another programs.
 
 pub mod entrypoint;
 
