@@ -3,9 +3,10 @@
 #![cfg(feature = "program")]
 #![cfg(not(feature = "no-entrypoint"))]
 
+use crate::{error::MetamaskError, processor::Processor};
 use solana_sdk::{
     account_info::AccountInfo, entrypoint, entrypoint::ProgramResult,
-    pubkey::Pubkey,
+    program_error::PrintProgramError, pubkey::Pubkey,
 };
 
 entrypoint!(process_instruction);
@@ -14,5 +15,10 @@ fn process_instruction<'a>(
     accounts: &'a [AccountInfo<'a>],
     instruction_data: &[u8],
 ) -> ProgramResult {
+    if let Err(error) = Processor::process(program_id, accounts, instruction_data) {
+        // catch the error so we can print it
+        error.print::<MetamaskError>();
+        return Err(error);
+    }
     Ok(())
 }
