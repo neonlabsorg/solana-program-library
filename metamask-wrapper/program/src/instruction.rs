@@ -15,10 +15,11 @@ use std::mem::size_of;
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum MetamaskInstruction {
-    Initialize {
-        token: Pubkey,
-        program: Pubkey,
-    },
+    /// Accounts expected by this instruction:
+    ///
+    ///   0. `[writable]`  The token to initialize.
+    ///   1. `[]` The program to initialize with this token.
+    Initialize,
     Transfer {
         amount: u64,
     }
@@ -29,14 +30,7 @@ impl MetamaskInstruction {
     pub fn unpack(input: &[u8]) -> Result<Self, ProgramError> {
         let (&tag, rest) = input.split_first().ok_or(MetamaskError::InvalidInstruction)?;
         Ok(match tag {
-            0 => {
-                let (token, rest) = Self::unpack_pubkey(rest)?;
-                let (program, rest) = Self::unpack_pubkey(rest)?;
-                Self::Initialize {
-                    token,
-                    program,
-                }
-            }
+            0 => Self::Initialize,
             3 => {
                 let (amount, rest) = rest.split_at(8);
                 let amount = amount
@@ -66,13 +60,8 @@ impl MetamaskInstruction {
     pub fn pack(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(size_of::<Self>());
         match *self {
-            Self::Initialize {
-                token,
-                program,
-            } => {
+            Self::Initialize => {
                 buf.push(0);
-                buf.extend_from_slice(token.as_ref());
-                buf.extend_from_slice(program.as_ref());
             }
             Self::Transfer { amount } => {
                 buf.push(3);

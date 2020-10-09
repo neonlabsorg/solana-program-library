@@ -1409,8 +1409,13 @@ dependencies = [
 name = "metamask-wrapper"
 version = "1.0.0"
 dependencies = [
+ "arrayref",
+ "num-derive",
+ "num-traits",
+ "num_enum",
  "solana-sdk",
- "spl-token 2.0.5",
+ "spl-token 2.0.6",
+ "thiserror",
 ]
 
 [[package]]

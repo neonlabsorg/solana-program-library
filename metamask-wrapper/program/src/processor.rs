@@ -28,12 +28,11 @@ pub struct Processor {}
 impl Processor {
     /// Processes an [Initialize](enum.Instruction.html).
     pub fn process_initialize(
-        accounts: &[AccountInfo],
-        token: &Pubkey,
-        program: &Pubkey,
+        accounts: &[AccountInfo]
     ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
         let token_info = next_account_info(account_info_iter)?;
+        let program_info = next_account_info(account_info_iter)?;
 
         let token_prog = TokenProgram::unpack(&token_info.data.borrow())?;
         if token_prog.is_initialized {
@@ -42,8 +41,8 @@ impl Processor {
 
         let obj = TokenProgram {
             is_initialized: true,
-            token: *token,
-            token_program_id: *program,
+            token: *(token_info.key),
+            token_program_id: *(program_info.key),
         };
         TokenProgram::pack(obj, &mut token_info.data.borrow_mut());
         Ok(())

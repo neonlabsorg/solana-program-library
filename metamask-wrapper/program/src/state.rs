@@ -29,11 +29,11 @@ impl Pack for TokenProgram {
         let src = array_ref![src, 0, 65];
         let (is_initialized, token, token_program_id) =
             array_refs![src, 1, 32, 32];
-        Ok(TokenProgram {
+        Ok(Self {
             is_initialized: match is_initialized {
                 [0] => false,
                 [1] => true,
-                _ => false,
+                _ => return Err(ProgramError::InvalidAccountData),
             },
             token: Pubkey::new_from_array(*token),
             token_program_id: Pubkey::new_from_array(*token_program_id),

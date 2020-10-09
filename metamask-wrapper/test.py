@@ -19,7 +19,7 @@ from construct import Struct as cStruct
 http_client = Client("http://localhost:8899")
 memo_program = 'Memo1UhkJRfHyvLMcVucJwxXeuD728EqVDDwQDxFMNo'
 token_program = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
-metamask_program = 'MetamaskW1111111111111111111111111111111111'
+metamask_program = '8CFmEizTSMQPDQSn6VM5gYkRruddaMrbWg5PoxdqMUDD'
 system_id = '11111111111111111111111111111111'
 CREATE_ACCOUNT_LAYOUT = cStruct(
     "instruction" / Int32ul,
@@ -59,7 +59,7 @@ def confirm_transaction(client, tx_sig):
     return resp
 
 class SolanaTests(unittest.TestCase):
-    version_recommended = '1.3.9'
+    version_recommended = '1.3.14'
 
     # such UI design is better visible than warnings.warn
     @classmethod
@@ -87,7 +87,7 @@ class SolanaTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.checkVersion()
-        cls.checkProgramInstalled(memo_program)
+        #cls.checkProgramInstalled(memo_program)
         cls.checkProgramInstalled(token_program)
         cls.checkProgramInstalled(metamask_program)
 
@@ -114,17 +114,18 @@ class SolanaTests(unittest.TestCase):
     #    confirm_transaction(http_client, result['result'])
     #    print("Confirmed")
 
-    def test_send_memo(self):
+    def test_metamask(self):
         keys = [
-            AccountMeta(pubkey = self.acc.public_key(), is_signer=True, is_writable=False)
+            AccountMeta(pubkey = self.acc.public_key(), is_signer=False, is_writable=True),
+            AccountMeta(pubkey = self.acc.public_key(), is_signer=False, is_writable=True)
         ]
         mint = PublicKey(memo_program)
         initializeData = INITIALIZE_TOKEN_LAYOUT.build(dict(
-            instruction=2, # Initialize
+            instruction=0, # Initialize
             program=bytes(mint),
-            token=bytes(mint)))
+            token=bytes(self.acc.public_key())))
         trx = Transaction().add(
-            TransactionInstruction(keys=keys, program_id=token_program, data=initializeData))
+            TransactionInstruction(keys=keys, program_id=metamask_program, data=initializeData))
         result = http_client.send_transaction(trx, self.acc)
         print('Send transaction result:', result)
         self.assertTrue('result' in result)
