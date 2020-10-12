@@ -18,8 +18,8 @@ from construct import Struct as cStruct
 
 http_client = Client("http://localhost:8899")
 memo_program = 'Memo1UhkJRfHyvLMcVucJwxXeuD728EqVDDwQDxFMNo'
-token_program = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
-metamask_program = '8CFmEizTSMQPDQSn6VM5gYkRruddaMrbWg5PoxdqMUDD'
+token_program = 'CXXt6djpeW4vzF8rCH1GuFeDufYNjrJtBem9Q4MtwAFy'
+metamask_program = '4oLBsQAa3jwkJZoStAektoxq1mkwiFS8WVSjVhTzwM3w'
 system_id = '11111111111111111111111111111111'
 CREATE_ACCOUNT_LAYOUT = cStruct(
     "instruction" / Int32ul,
@@ -36,8 +36,6 @@ ALLOCATE_WITH_SEED_LAYOUT = cStruct(
 )
 INITIALIZE_TOKEN_LAYOUT = cStruct(
     "instruction" / Int8ul,
-    "token" / PUBLIC_KEY_LAYOUT,
-    "program" / PUBLIC_KEY_LAYOUT,
 )
 def confirm_transaction(client, tx_sig):
     """Confirm a transaction."""
@@ -119,11 +117,9 @@ class SolanaTests(unittest.TestCase):
             AccountMeta(pubkey = self.acc.public_key(), is_signer=False, is_writable=True),
             AccountMeta(pubkey = self.acc.public_key(), is_signer=False, is_writable=True)
         ]
-        mint = PublicKey(memo_program)
         initializeData = INITIALIZE_TOKEN_LAYOUT.build(dict(
-            instruction=0, # Initialize
-            program=bytes(mint),
-            token=bytes(self.acc.public_key())))
+            instruction=0 # Initialize
+        ))
         trx = Transaction().add(
             TransactionInstruction(keys=keys, program_id=metamask_program, data=initializeData))
         result = http_client.send_transaction(trx, self.acc)
@@ -131,6 +127,7 @@ class SolanaTests(unittest.TestCase):
         self.assertTrue('result' in result)
         confirm_transaction(http_client, result['result'])
         print("Confirmed")
+
 
 if __name__ == '__main__':
     unittest.main()

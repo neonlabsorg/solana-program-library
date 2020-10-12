@@ -34,7 +34,7 @@ impl Processor {
         let token_info = next_account_info(account_info_iter)?;
         let program_info = next_account_info(account_info_iter)?;
 
-        let token_prog = TokenProgram::unpack(&token_info.data.borrow())?;
+        let mut token_prog = TokenProgram::unpack_unchecked(&token_info.data.borrow())?;
         if token_prog.is_initialized {
             return Err(MetamaskError::TokenAlreadyRegistered.into());
         }
@@ -45,6 +45,7 @@ impl Processor {
             token_program_id: *(program_info.key),
         };
         TokenProgram::pack(obj, &mut token_info.data.borrow_mut());
+
         Ok(())
     }
     /// Processes an [Transfer](enum.Instruction.html).
@@ -77,15 +78,10 @@ impl Processor {
     pub fn process(program_id: &Pubkey, accounts: &[AccountInfo], input: &[u8]) -> ProgramResult {
         let instruction = MetamaskInstruction::unpack(input)?;
         match instruction {
-            MetamaskInstruction::Initialize {
-                token,
-                program,
-            } => {
+            MetamaskInstruction::Initialize => {
                 info!("Instruction: Init");
                 Self::process_initialize(
                     accounts,
-                    &token,
-                    &program,
                 )
             }
             MetamaskInstruction::Transfer {

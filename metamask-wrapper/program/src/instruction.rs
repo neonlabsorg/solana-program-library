@@ -78,13 +78,11 @@ pub fn initialize(
     token: &Pubkey,
     token_program_id: &Pubkey,
 ) -> Result<Instruction, ProgramError> {
-    let init_data = MetamaskInstruction::Initialize {
-        token: *token,
-        program: *token_program_id,
-    };
+    let init_data = MetamaskInstruction::Initialize;
     let data = init_data.pack();
 
     let accounts = vec![
+        AccountMeta::new(*token, false),
         AccountMeta::new(*token_program_id, false),
     ];
 
