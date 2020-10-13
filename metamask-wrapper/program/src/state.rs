@@ -8,43 +8,48 @@ use solana_sdk::{
     pubkey::Pubkey,
 };
 
-/// TokenProgram data. token is id of token, token_program_id is id of associated program, transfer instruction is always 3, and parameters are always same.
+/// TokenInfo data. token is id of token, token_program_id is id of associated program, transfer instruction is always 3, and parameters are always same.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct TokenProgram {
+pub struct TokenInfo {
     /// Is `true` if this structure has been initialized
     pub is_initialized: bool,
     pub token: Pubkey,
-    pub token_program_id: Pubkey,
+    pub eth_token: [u8;20],
+    pub decimals: u8,
 }
-impl Sealed for TokenProgram {}
-impl IsInitialized for TokenProgram {
+impl Sealed for TokenInfo {}
+impl IsInitialized for TokenInfo {
     fn is_initialized(&self) -> bool {
         self.is_initialized
     }
 }
-impl Pack for TokenProgram {
-    const LEN: usize = 65;
+impl Pack for TokenInfo {
+    const LEN: usize = 54;
     fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
-        let src = array_ref![src, 0, 65];
-        let (is_initialized, token, token_program_id) =
-            array_refs![src, 1, 32, 32];
-        Ok(Self {
+        let src = array_ref![src, 0, 54];
+        let (is_initialized, token, eth_token, decimals) =
+            array_refs![src, 1, 32, 20, 1];
+        Ok(TokenInfo {
             is_initialized: match is_initialized {
                 [0] => false,
                 [1] => true,
-                _ => return Err(ProgramError::InvalidAccountData),
+                _ => false,
             },
             token: Pubkey::new_from_array(*token),
-            token_program_id: Pubkey::new_from_array(*token_program_id),
+            eth_token: *eth_token,
+            decimals: decimals[0],
         })
     }
     fn pack_into_slice(&self, dst: &mut [u8]) {
-        let dst = array_mut_ref![dst, 0, 65];
-        let (is_initialized, token, token_program_id) =
-            mut_array_refs![dst, 1, 32, 32];
+        let dst = array_mut_ref![dst, 0, 54];
+        let (is_initialized, token, eth_token, decimals) =
+            mut_array_refs![dst, 1, 32, 20, 1];
         is_initialized[0] = self.is_initialized as u8;
         token.copy_from_slice(self.token.as_ref());
-        token_program_id.copy_from_slice(self.token_program_id.as_ref());
+        eth_token.copy_from_slice(self.eth_token.as_ref());
+        decimals[0] = self.decimals as u8;
     }
 }
+
+

@@ -15,13 +15,17 @@ use std::mem::size_of;
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum MetamaskInstruction {
-    /// Accounts expected by this instruction:
-    ///
-    ///   0. `[writable]`  The token to initialize.
-    ///   1. `[]` The program to initialize with this token.
-    Initialize,
+    Initialize {
+        token: Pubkey,
+        eth_token: [u8;20],
+        decimals: u8,
+        nonce: u8,
+    },
     Transfer {
         amount: u64,
+        nonce: u8,
+        eth_token: [u8;20],
+        eth_acc: [u8;20],
     }
 }
 
@@ -30,17 +34,34 @@ impl MetamaskInstruction {
     pub fn unpack(input: &[u8]) -> Result<Self, ProgramError> {
         let (&tag, rest) = input.split_first().ok_or(MetamaskError::InvalidInstruction)?;
         Ok(match tag {
-            0 => Self::Initialize,
+            0 => {
+                let (token, rest) = Self::unpack_pubkey(rest)?;
+                let (eth_token_slice, rest) = rest.split_at(20);
+                let (&decimals, rest) = rest.split_first().ok_or(MetamaskError::InvalidInstruction)?;
+                let (&nonce, rest) = rest.split_first().ok_or(MetamaskError::InvalidInstruction)?;
+
+                let mut eth_token: [u8;20] = Default::default();
+                eth_token.copy_from_slice(&eth_token_slice);
+
+                Self::Initialize {token, eth_token, decimals, nonce,}
+            }
             3 => {
                 let (amount, rest) = rest.split_at(8);
+                let (&nonce, rest) = rest.split_first().ok_or(MetamaskError::InvalidInstruction)?;
+                let (eth_token_slice, rest) = rest.split_at(20);
+                let (eth_acc_slice, rest) = rest.split_at(20);
                 let amount = amount
                     .try_into()
                     .ok()
                     .map(u64::from_le_bytes)
                     .ok_or(MetamaskError::InvalidInstruction)?;
-                Self::Transfer {
-                    amount,
-                }
+
+                let mut eth_token : [u8; 20] = Default::default();
+                let mut eth_acc : [u8; 20] = Default::default();
+                eth_token.copy_from_slice(&eth_token_slice);
+                eth_acc.copy_from_slice(&eth_acc_slice);
+
+                Self::Transfer {amount, nonce, eth_token, eth_acc,}
             }
             _ => return Err(MetamaskError::InvalidInstruction.into()),
         })
@@ -60,12 +81,24 @@ impl MetamaskInstruction {
     pub fn pack(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(size_of::<Self>());
         match *self {
-            Self::Initialize => {
+            Self::Initialize {
+                token,
+                eth_token,
+                decimals,
+                nonce,
+            } => {
                 buf.push(0);
+                buf.extend_from_slice(token.as_ref());
+                buf.extend_from_slice(eth_token.as_ref());
+                buf.push(decimals);
+                buf.push(nonce,)
             }
-            Self::Transfer { amount } => {
+            Self::Transfer { amount, nonce, eth_token, eth_acc } => {
                 buf.push(3);
                 buf.extend_from_slice(&amount.to_le_bytes());
+                buf.push(nonce);
+                buf.extend_from_slice(&eth_token);
+                buf.extend_from_slice(&eth_acc);
             }
         }
         buf
@@ -74,20 +107,27 @@ impl MetamaskInstruction {
 
 /// Creates an 'initialize' instruction.
 pub fn initialize(
-    program_id: &Pubkey,
+    wrapper_program: &Pubkey,
+    token_info: &Pubkey,
     token: &Pubkey,
-    token_program_id: &Pubkey,
+    eth_token: &[u8;20],
+    decimals: u8,
+    nonce: u8,
 ) -> Result<Instruction, ProgramError> {
-    let init_data = MetamaskInstruction::Initialize;
+    let init_data = MetamaskInstruction::Initialize {
+        token: *token,
+        eth_token: *eth_token,
+        decimals: decimals,
+        nonce: nonce,
+    };
     let data = init_data.pack();
 
     let accounts = vec![
-        AccountMeta::new(*token, false),
-        AccountMeta::new(*token_program_id, false),
+        AccountMeta::new(*token_info, false),
     ];
 
     Ok(Instruction {
-        program_id: *program_id,
+        program_id: *wrapper_program,
         accounts,
         data,
     })
@@ -96,26 +136,21 @@ pub fn initialize(
 /// Creates a `Transfer` instruction.
 pub fn transfer(
     program_id: &Pubkey,
-    token_id: &Pubkey,
     source_pubkey: &Pubkey,
     destination_pubkey: &Pubkey,
     authority_pubkey: &Pubkey,
-    signer_pubkeys: &[&Pubkey],
     amount: u64,
+    nonce: u8,
+    eth_token: [u8; 20],
+    eth_acc: [u8; 20],
 ) -> Result<Instruction, ProgramError> {
-    let data = MetamaskInstruction::Transfer { amount }.pack();
+    let data = MetamaskInstruction::Transfer { amount, nonce, eth_token, eth_acc }.pack();
 
-    let mut accounts = Vec::with_capacity(4+ signer_pubkeys.len());
-    accounts.push(AccountMeta::new(*token_id, false));
+    let mut accounts = Vec::with_capacity(4);
+    accounts.push(AccountMeta::new(*program_id, false));
     accounts.push(AccountMeta::new(*source_pubkey, false));
     accounts.push(AccountMeta::new(*destination_pubkey, false));
-    accounts.push(AccountMeta::new_readonly(
-        *authority_pubkey,
-        signer_pubkeys.is_empty(),
-    ));
-    for signer_pubkey in signer_pubkeys.iter() {
-        accounts.push(AccountMeta::new_readonly(**signer_pubkey, true));
-    }
+    accounts.push(AccountMeta::new_readonly(*authority_pubkey, false));
 
     Ok(Instruction {
         program_id: *program_id,
