@@ -1410,6 +1410,8 @@ name = "metamask-wrapper"
 version = "1.0.0"
 dependencies = [
  "arrayref",
+ "bs58",
+ "hex",
  "num-derive",
  "num-traits",
  "num_enum",
