@@ -8,11 +8,21 @@ use thiserror::Error;
 #[derive(Clone, Debug, Eq, Error, FromPrimitive, PartialEq)]
 pub enum MetamaskError {
     /// The account cannot be initialized because it is already being used.
+    #[error("Same account is already registered")]
+    AccountAlreadyRegistered,
+
+    /// The token cannot be initialized because it is already being used.
     #[error("Same token is already registered")]
     TokenAlreadyRegistered,
+
+    /// Balanc cannot be initialized because it is already being used
+    #[error("Same balance is already registered")]
+    BalanceAlreadyRegistered,
+
     /// Try to transfer token which is not registered with its program.
     #[error("Token is not registered")]
     TokenNotRegistered,
+
     /// Invalid instruction number passed in.
     #[error("Invalid instruction")]
     InvalidInstruction,
