@@ -6,6 +6,7 @@ use crate::{
     error::MetamaskError,
     instruction::MetamaskInstruction,
     state::{AccountInfo as AccInfo, TokenInfo, BalanceInfo,},
+    eth_transaction::SignedTransaction,
 };
 use num_traits::FromPrimitive;
 #[cfg(target_arch = "bpf")]
