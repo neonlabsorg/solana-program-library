@@ -191,6 +191,33 @@ impl Processor {
         )
     }
 
+    /// Processes an [TransferLamports](enum.Instruction.html).
+    pub fn process_transfer_lamports(
+        accounts: &[AccountInfo],
+        amount: u64,
+        nonce: u8,
+        eth_acc: &[u8;20],
+    ) -> ProgramResult {
+        let account_info_iter = &mut accounts.iter();
+
+        let source = next_account_info(account_info_iter)?;
+        let destination = next_account_info(account_info_iter)?;
+        let system_id = next_account_info(account_info_iter)?;
+
+        let seeds = [&eth_acc[..20], "lamports".as_ref(), &[nonce]];
+        let signers = &[&seeds[..]];
+        let ix = solana_sdk::system_instruction::transfer(
+            source.key,
+            destination.key,
+            amount,
+        );
+        invoke_signed(
+            &ix,
+            &[source.clone(), destination.clone(), system_id.clone()],
+            signers,
+        )
+    }
+
     /// Processes an [Instruction](enum.Instruction.html).
     pub fn process(program_id: &Pubkey, accounts: &[AccountInfo], input: &[u8]) -> ProgramResult {
         let instruction = MetamaskInstruction::unpack(input)?;
@@ -216,6 +243,9 @@ impl Processor {
                 Self::process_transfer(
                     accounts, amount, nonce, &eth_token, &eth_acc,
                 )
+            }
+            MetamaskInstruction::TransferLamports {amount, nonce, eth_acc} => {
+                Self::process_transfer_lamports(accounts, amount, nonce, &eth_acc)
             }
         }
     }

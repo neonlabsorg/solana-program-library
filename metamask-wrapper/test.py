@@ -30,7 +30,7 @@ http_client = Client("http://localhost:8899")
 memo_program = 'Memo1UhkJRfHyvLMcVucJwxXeuD728EqVDDwQDxFMNo'
 token_program = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
 metamask_program = '4oLBsQAa3jwkJZoStAektoxq1mkwiFS8WVSjVhTzwM3w'
-wrapper_program = '2UtxUCpaF38zSjhtfy8Tb9C9u8TkHwLZg9YRSCZgg75W'
+wrapper_program = 'HB7yN5ZLPi1cLUAZs6QF4y6ZdRN1K4YhGzyRgewF23rD'
 system_id = '11111111111111111111111111111111'
 
 CREATE_ACCOUNT_LAYOUT = cStruct(
@@ -271,6 +271,18 @@ class SolanaTests(unittest.TestCase):
             response = token.get_balance(account)
             print('Balance:', account, response['result']['value']['uiAmount'])
             self.assertEqual(amount, int(response['result']['value']['amount']))
+
+
+    def test_transfer_lamports(self):
+        eth_acc = EthereumAddress('0x324726CA9954Ed9bd567a62ae38a7dD7B4EaAD0e')
+        balance = self.wrapper.getLamports(eth_acc)
+
+        trx = Transaction().add(
+            self.wrapper.transferLamports(eth_acc, '6ghLBF2LZAooDnmUMVm8tdNK6jhcAQhtbQiC7TgVnQ2r', 1))
+        result = http_client.send_transaction(trx, self.acc, opts=TxOpts(skip_confirmation=False))
+        print('result:', result)
+
+        self.assertEqual(balance-1, self.wrapper.getLamports(eth_acc))
 
 
     def test_metamask_init_balance(self):

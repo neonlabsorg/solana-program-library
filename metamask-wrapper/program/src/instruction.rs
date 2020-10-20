@@ -88,7 +88,7 @@ pub enum MetamaskInstruction {
     ///   0. `[]` token program id
     ///   1. `[writable]` source account (must be owned by authority)
     ///   2. `[writable]` destination account
-    ///   3. `[]` authority for source account (derived from create_program_address([eth_token, eth_acc], program_id)
+    ///   3. `[]` authority for source account (derived from create_program_address([eth_token, eth_acc], program_id))
     ///
     Transfer {
         /// The amount of tokens to transfer
@@ -97,6 +97,22 @@ pub enum MetamaskInstruction {
         nonce: u8,
         /// Ethereum token address
         eth_token: [u8;20],
+        /// Ethereum source account address
+        eth_acc: [u8;20],
+    },
+
+    /// Transfer lamports from Ethereum account.
+    ///
+    /// Accounts expected by this instruction:
+    ///
+    ///   0. `[writable]` source account (derived from create_program_address([eth_acc, 'lamports'], program_id))
+    ///   1. `[writable]` destination account
+    ///   2. `[]` system_id
+    TransferLamports {
+        /// The amount of lamports to transfer
+        amount: u64,
+        /// Nonce derived from find_program_address([eth_acc, 'lamports'], program_id)
+        nonce: u8,
         /// Ethereum source account address
         eth_acc: [u8;20],
     },
@@ -157,6 +173,21 @@ impl MetamaskInstruction {
 
                 Self::Transfer {amount, nonce, eth_token, eth_acc,}
             }
+            4 => {
+                let (amount, rest) = rest.split_at(8);
+                let (&nonce, rest) = rest.split_first().ok_or(MetamaskError::InvalidInstruction)?;
+                let (eth_acc_slice, _rest) = rest.split_at(20);
+                let amount = amount
+                    .try_into()
+                    .ok()
+                    .map(u64::from_le_bytes)
+                    .ok_or(MetamaskError::InvalidInstruction)?;
+
+                let mut eth_acc : [u8; 20] = Default::default();
+                eth_acc.copy_from_slice(&eth_acc_slice);
+
+                Self::TransferLamports {amount, nonce, eth_acc,}
+            }
             _ => return Err(MetamaskError::InvalidInstruction.into()),
         })
     }
@@ -198,6 +229,12 @@ impl MetamaskInstruction {
                 buf.extend_from_slice(&amount.to_le_bytes());
                 buf.push(nonce);
                 buf.extend_from_slice(&eth_token);
+                buf.extend_from_slice(&eth_acc);
+            }
+            Self::TransferLamports { amount, nonce, eth_acc, } => {
+                buf.push(4);
+                buf.extend_from_slice(&amount.to_le_bytes());
+                buf.push(nonce);
                 buf.extend_from_slice(&eth_acc);
             }
         }

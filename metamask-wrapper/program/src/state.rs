@@ -11,7 +11,6 @@ use solana_sdk::{
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct AccountInfo {
-    /// Is `true` if this structure has been initialized
     pub eth_acc: [u8;20],
     pub trx_count: u32,
 }
@@ -45,7 +44,6 @@ impl Pack for AccountInfo {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct TokenInfo {
-    /// Is `true` if this structure has been initialized
     pub token: Pubkey,
     pub eth_token: [u8;20],
 }
