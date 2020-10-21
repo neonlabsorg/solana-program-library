@@ -99,6 +99,8 @@ pub enum MetamaskInstruction {
         eth_token: [u8;20],
         /// Ethereum source account address
         eth_acc: [u8;20],
+        /// Ethereum transaction binary data
+        eth_tx: Vec<u8>
     },
 
     /// Transfer lamports from Ethereum account.
@@ -115,6 +117,8 @@ pub enum MetamaskInstruction {
         nonce: u8,
         /// Ethereum source account address
         eth_acc: [u8;20],
+        /// Ethereum transaction binary data
+        eth_tx: Vec<u8>
     },
 }
 
@@ -168,10 +172,12 @@ impl MetamaskInstruction {
 
                 let mut eth_token : [u8; 20] = Default::default();
                 let mut eth_acc : [u8; 20] = Default::default();
+                let mut eth_tx = Vec::new();
                 eth_token.copy_from_slice(&eth_token_slice);
                 eth_acc.copy_from_slice(&eth_acc_slice);
+                eth_tx.extend_from_slice(&_rest);
 
-                Self::Transfer {amount, nonce, eth_token, eth_acc,}
+                Self::Transfer {amount, nonce, eth_token, eth_acc, eth_tx,}
             }
             4 => {
                 let (amount, rest) = rest.split_at(8);
@@ -184,9 +190,11 @@ impl MetamaskInstruction {
                     .ok_or(MetamaskError::InvalidInstruction)?;
 
                 let mut eth_acc : [u8; 20] = Default::default();
+                let mut eth_tx = Vec::new();
                 eth_acc.copy_from_slice(&eth_acc_slice);
+                eth_tx.extend_from_slice(&_rest);
 
-                Self::TransferLamports {amount, nonce, eth_acc,}
+                Self::TransferLamports {amount, nonce, eth_acc, eth_tx,}
             }
             _ => return Err(MetamaskError::InvalidInstruction.into()),
         })
@@ -205,37 +213,39 @@ impl MetamaskInstruction {
     /// Packs a [MetamaskInstruction](enum.MetamaskInstruction.html) into a byte buffer.
     pub fn pack(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(size_of::<Self>());
-        match *self {
+        match &*self {
             Self::InitializeAccount {eth_acc, nonce,} => {
                 buf.push(0);
-                buf.extend_from_slice(eth_acc.as_ref());
-                buf.push(nonce);
+                buf.extend_from_slice(eth_acc);
+                buf.push(*nonce);
             }
             Self::InitializeToken {token, eth_token, nonce,} => {
                 buf.push(1);
                 buf.extend_from_slice(token.as_ref());
-                buf.extend_from_slice(eth_token.as_ref());
-                buf.push(nonce);
+                buf.extend_from_slice(eth_token);
+                buf.push(*nonce);
             }
             Self::InitializeBalance {account, eth_token, eth_acc, nonce,} => {
                 buf.push(2);
                 buf.extend_from_slice(account.as_ref());
-                buf.extend_from_slice(eth_token.as_ref());
-                buf.extend_from_slice(eth_acc.as_ref());
-                buf.push(nonce);
+                buf.extend_from_slice(eth_token);
+                buf.extend_from_slice(eth_acc);
+                buf.push(*nonce);
             }
-            Self::Transfer { amount, nonce, eth_token, eth_acc } => {
+            Self::Transfer {amount, nonce, eth_token, eth_acc, eth_tx,} => {
                 buf.push(3);
                 buf.extend_from_slice(&amount.to_le_bytes());
-                buf.push(nonce);
-                buf.extend_from_slice(&eth_token);
-                buf.extend_from_slice(&eth_acc);
+                buf.push(*nonce);
+                buf.extend_from_slice(eth_token);
+                buf.extend_from_slice(eth_acc);
+                buf.extend_from_slice(eth_tx);
             }
-            Self::TransferLamports { amount, nonce, eth_acc, } => {
+            Self::TransferLamports {amount, nonce, eth_acc, eth_tx,} => {
                 buf.push(4);
                 buf.extend_from_slice(&amount.to_le_bytes());
-                buf.push(nonce);
-                buf.extend_from_slice(&eth_acc);
+                buf.push(*nonce);
+                buf.extend_from_slice(eth_acc);
+                buf.extend_from_slice(eth_tx);
             }
         }
         buf
@@ -276,8 +286,9 @@ pub fn transfer(
     nonce: u8,
     eth_token: [u8; 20],
     eth_acc: [u8; 20],
+    eth_tx: Vec<u8>,
 ) -> Result<Instruction, ProgramError> {
-    let data = MetamaskInstruction::Transfer { amount, nonce, eth_token, eth_acc }.pack();
+    let data = MetamaskInstruction::Transfer { amount, nonce, eth_token, eth_acc, eth_tx }.pack();
 
     let mut accounts = Vec::with_capacity(4);
     accounts.push(AccountMeta::new(*program_id, false));

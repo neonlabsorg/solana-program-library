@@ -167,6 +167,7 @@ impl Processor {
         nonce: u8,
         eth_token: &[u8;20],
         eth_acc: &[u8;20],
+        eth_tx: &Vec<u8>,
     ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
 
@@ -198,6 +199,7 @@ impl Processor {
         amount: u64,
         nonce: u8,
         eth_acc: &[u8;20],
+        eth_tx: &Vec<u8>,
     ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
 
@@ -237,16 +239,16 @@ impl Processor {
                 info!(&hex::encode(&eth_acc));
                 Self::process_initialize_balance(accounts, &program_id, &account, &eth_token, &eth_acc, nonce,)
             }
-            MetamaskInstruction::Transfer {amount, nonce, eth_token, eth_acc,} => {
+            MetamaskInstruction::Transfer {amount, nonce, eth_token, eth_acc, eth_tx,} => {
                 info!("Instruction: Transfer");
                 info!(&hex::encode(&eth_token));
                 info!(&hex::encode(&eth_acc));
                 Self::process_transfer(
-                    accounts, amount, nonce, &eth_token, &eth_acc,
+                    accounts, amount, nonce, &eth_token, &eth_acc, &eth_tx,
                 )
             }
-            MetamaskInstruction::TransferLamports {amount, nonce, eth_acc} => {
-                Self::process_transfer_lamports(accounts, amount, nonce, &eth_acc)
+            MetamaskInstruction::TransferLamports {amount, nonce, eth_acc, eth_tx,} => {
+                Self::process_transfer_lamports(accounts, amount, nonce, &eth_acc, &eth_tx,)
             }
         }
     }
