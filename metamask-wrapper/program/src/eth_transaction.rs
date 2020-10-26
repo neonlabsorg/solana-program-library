@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use serde::{Serialize, Deserialize};
 use impl_serde::serialize as bytes;
 use rlp::RlpStream;
-//use solana_sdk::info;
+use sha3::{Digest, Keccak256};
 
 pub use ethereum_types::{Address, U256};
 
@@ -132,3 +132,15 @@ impl<'a> rlp::Encodable for SignedTransaction<'a> {
 
 //let data = vec![0x83, b'c', b'a', b't'];
 //let decoded: SignedTransaction = rlp::decode(&data).unwrap();
+
+pub fn get_tx_sender(tx: &SignedTransaction) -> Address { // TODO: Should return Result and should return error if error
+    if tx.r == U256::zero() {
+        return Address::from([0xffu8; 20]);
+    }
+    if tx.v == 27u32.into() || tx.v == 28u32.into() {
+    } else if tx.v >= 37u32.into() {
+    } else {
+        return Address::from([0xffu8; 20]);
+    }
+    return Address::from([0xffu8; 20]);
+}

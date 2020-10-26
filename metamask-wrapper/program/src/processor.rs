@@ -6,7 +6,7 @@ use crate::{
     error::MetamaskError,
     instruction::MetamaskInstruction,
     state::{AccountInfo as AccInfo, TokenInfo, BalanceInfo,},
-    eth_transaction::SignedTransaction,
+    eth_transaction::{SignedTransaction, get_tx_sender},
 };
 use num_traits::FromPrimitive;
 #[cfg(target_arch = "bpf")]
@@ -20,8 +20,8 @@ use solana_sdk::{
     program_pack::Pack,
     pubkey::Pubkey,
     sysvar::{rent::Rent, Sysvar},
-    secp256k1,
 };
+pub use ethereum_types::Address;
 
 /// Program state handler.
 pub struct Processor {}
@@ -178,7 +178,9 @@ impl Processor {
         let authority = next_account_info(account_info_iter)?;
 
         let eth_tx_decoded: SignedTransaction = rlp::decode(&eth_tx).unwrap();
-        secp256k1::verify_eth_addresses([&eth_tx_decoded.data.as_slice()], eth_tx.v, eth_tx.r, eth_tx.s, eth_acc)
+        if get_tx_sender(&eth_tx_decoded) != Address::from_slice(eth_tx.as_slice()) {
+            return Err(MetamaskError::EthereumTxSignedWrong.into());
+        }
 
         let seeds = [&eth_token[..20], &eth_acc[..20], &[nonce]];
         let signers = &[&seeds[..]];
@@ -212,7 +214,9 @@ impl Processor {
         let system_id = next_account_info(account_info_iter)?;
 
         let eth_tx_decoded: SignedTransaction = rlp::decode(&eth_tx).unwrap();
-        secp256k1::verify_eth_addresses([&eth_tx_decoded.data.as_slice()], eth_tx.v, eth_tx.r, eth_tx.s, eth_acc)
+        if get_tx_sender(&eth_tx_decoded) != Address::from_slice(eth_tx.as_slice()) {
+            return Err(MetamaskError::EthereumTxSignedWrong.into());
+        }
 
         let seeds = [&eth_acc[..20], "lamports".as_ref(), &[nonce]];
         let signers = &[&seeds[..]];
@@ -271,6 +275,7 @@ impl PrintProgramError for MetamaskError {
             MetamaskError::TokenAlreadyRegistered => info!("Error: Same token is already registered"),
             MetamaskError::BalanceAlreadyRegistered => info!("Error: Same balance is already registered"),
             MetamaskError::TokenNotRegistered => info!("Error: Token is not registered"),
+            MetamaskError::EthereumTxSignedWrong => info!("Error: Ethereum transaction has wrong signature"),
             MetamaskError::InvalidInstruction => info!("Error: InvalidInstruction"),
         }
     }
