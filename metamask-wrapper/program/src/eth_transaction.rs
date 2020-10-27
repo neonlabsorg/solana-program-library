@@ -71,6 +71,16 @@ impl<'a> SignedTransaction<'a> {
             s,
         }
     }
+
+    pub fn network_id(&self) -> Option<U256> {
+        if self.r == U256::zero() && self.s == U256::zero() {
+            Some(U256::from(self.v.clone()))
+        } else if self.v == 27u32.into() || self.v == 28u32.into() {
+            None
+        } else {
+            Some(((U256::from(self.v.clone()) - 1u32) / 2u32) - 17u32)
+        }
+    }
 }
 
 fn debug(s: &str, err: rlp::DecoderError) -> rlp::DecoderError {
@@ -152,14 +162,29 @@ pub fn get_tx_sender(tx: &SignedTransaction) -> Address { // TODO: Should return
     if tx.r == U256::zero() {
         return Address::from([0xffu8; 20]);
     }
+    let mut vee: u64 = 0;
     if tx.v == 27u32.into() || tx.v == 28u32.into() {
-        let vee = tx.v.clone();
+        vee = tx.v.clone();
         let rlp_data = rlp::encode(tx.transaction.as_ref());
         let sig_hash = Keccak256::digest(&rlp_data);
 
         // TODO construct compact and recover pubkey
+        return Address::from([0x01u8; 20]);
     } else if tx.v >= 37u32.into() {
-        // TODO
+        let network_id = tx.network_id();
+        if network_id.is_none() {
+            return Address::from([0xffu8; 20]);
+        }
+        vee = (U256::from(tx.v.clone()) - (network_id.unwrap() * 2u32) - 8u32).as_u64();
+        if vee != 27u32.into() && vee != 28u32.into() {
+            return Address::from([0xffu8; 20]);
+        }
+
+        let rlp_data = rlp::encode(tx.transaction.as_ref());
+        let sig_hash = Keccak256::digest(&rlp_data);
+
+
+        return Address::from([0x02u8; 20]);
     } else {
         return Address::from([0xffu8; 20]);
     }
