@@ -177,8 +177,11 @@ impl Processor {
         let destination = next_account_info(account_info_iter)?;
         let authority = next_account_info(account_info_iter)?;
 
-        let eth_tx_decoded: SignedTransaction = rlp::decode(&eth_tx).unwrap();
-        if get_tx_sender(&eth_tx_decoded) != Address::from_slice(eth_tx.as_slice()) {
+        let eth_tx_decoded: Result<SignedTransaction, _> = rlp::decode(&eth_tx);
+        if eth_tx_decoded.is_err() {
+            return Err(MetamaskError::EthereumTxInvalidFormat.into());
+        }
+        if get_tx_sender(&eth_tx_decoded.unwrap()) != Address::from_slice(eth_acc) {
             return Err(MetamaskError::EthereumTxSignedWrong.into());
         }
 
@@ -213,8 +216,11 @@ impl Processor {
         let destination = next_account_info(account_info_iter)?;
         let system_id = next_account_info(account_info_iter)?;
 
-        let eth_tx_decoded: SignedTransaction = rlp::decode(&eth_tx).unwrap();
-        if get_tx_sender(&eth_tx_decoded) != Address::from_slice(eth_tx.as_slice()) {
+        let eth_tx_decoded: Result<SignedTransaction, _> = rlp::decode(&eth_tx);
+        if eth_tx_decoded.is_err() {
+            return Err(MetamaskError::EthereumTxInvalidFormat.into());
+        }
+        if get_tx_sender(&eth_tx_decoded.unwrap()) != Address::from_slice(eth_acc) {
             return Err(MetamaskError::EthereumTxSignedWrong.into());
         }
 
@@ -275,6 +281,7 @@ impl PrintProgramError for MetamaskError {
             MetamaskError::TokenAlreadyRegistered => info!("Error: Same token is already registered"),
             MetamaskError::BalanceAlreadyRegistered => info!("Error: Same balance is already registered"),
             MetamaskError::TokenNotRegistered => info!("Error: Token is not registered"),
+            MetamaskError::EthereumTxInvalidFormat => info!("Error: Ethereum transaction has invalid format"),
             MetamaskError::EthereumTxSignedWrong => info!("Error: Ethereum transaction has wrong signature"),
             MetamaskError::InvalidInstruction => info!("Error: InvalidInstruction"),
         }

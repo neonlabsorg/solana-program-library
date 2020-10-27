@@ -112,6 +112,21 @@ impl<'a> rlp::Decodable for SignedTransaction<'a> {
 	}
 }
 
+impl rlp::Encodable for Transaction {
+    fn rlp_append(&self, s: &mut RlpStream) {
+        s.begin_list(6);
+        s.append(&self.nonce);
+        s.append(&self.gas_price);
+        s.append(&self.gas);
+        match self.to.as_ref() {
+            None => s.append(&""),
+            Some(addr) => s.append(addr),
+        };
+        s.append(&self.value);
+        s.append(&self.data.0);
+    }
+}
+
 impl<'a> rlp::Encodable for SignedTransaction<'a> {
 	fn rlp_append(&self, s: &mut RlpStream) {
 		s.begin_list(9);
@@ -138,7 +153,13 @@ pub fn get_tx_sender(tx: &SignedTransaction) -> Address { // TODO: Should return
         return Address::from([0xffu8; 20]);
     }
     if tx.v == 27u32.into() || tx.v == 28u32.into() {
+        let vee = tx.v.clone();
+        let rlp_data = rlp::encode(tx.transaction.as_ref());
+        let sig_hash = Keccak256::digest(&rlp_data);
+
+        // TODO construct compact and recover pubkey
     } else if tx.v >= 37u32.into() {
+        // TODO
     } else {
         return Address::from([0xffu8; 20]);
     }

@@ -29,8 +29,8 @@ from wrapper import create_program_address, EthereumAddress
 http_client = Client("http://localhost:8899")
 memo_program = 'Memo1UhkJRfHyvLMcVucJwxXeuD728EqVDDwQDxFMNo'
 token_program = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
-metamask_program = '4oLBsQAa3jwkJZoStAektoxq1mkwiFS8WVSjVhTzwM3w'
-wrapper_program = 'HB7yN5ZLPi1cLUAZs6QF4y6ZdRN1K4YhGzyRgewF23rD'
+metamask_program = '9aBMysdxZHW5BFZQiCkxRodjtXixydzBk7uDyJzFeyYX'
+wrapper_program = 'CpB6wXiDrDohn9jAcXLbKxgcuAnwuAeATqcuXmHhnnBH'
 system_id = '11111111111111111111111111111111'
 
 CREATE_ACCOUNT_LAYOUT = cStruct(
@@ -276,9 +276,19 @@ class SolanaTests(unittest.TestCase):
     def test_transfer_lamports(self):
         eth_acc = EthereumAddress('0x324726CA9954Ed9bd567a62ae38a7dD7B4EaAD0e')
         balance = self.wrapper.getLamports(eth_acc)
+        eth_tx_invalid = bytearray.fromhex('010203')
+        eth_tx = bytearray.fromhex('f86b808503bfa2810082520894454c5477a55486afc43f069b2ee14246f6943e5e870e35fa931a00008078a0ce610aa6cf323602e3456d97481caee71c75b43aa5abb52740fc0bdcea50501ea0120796bc1e87e74f50a7bac5323b1c91564e891fd4a4e322888d90855ad5a701')
 
         trx = Transaction().add(
-            self.wrapper.transferLamports(eth_acc, '6ghLBF2LZAooDnmUMVm8tdNK6jhcAQhtbQiC7TgVnQ2r', 1))
+            self.wrapper.transferLamports(eth_acc, '6ghLBF2LZAooDnmUMVm8tdNK6jhcAQhtbQiC7TgVnQ2r', 1, eth_tx_invalid))
+        try:
+            result = http_client.send_transaction(trx, self.acc, opts=TxOpts(skip_confirmation=False))
+            self.assertFalse('result' in result)
+        except:
+            pass
+
+        trx = Transaction().add(
+            self.wrapper.transferLamports(eth_acc, '6ghLBF2LZAooDnmUMVm8tdNK6jhcAQhtbQiC7TgVnQ2r', 1, eth_tx))
         result = http_client.send_transaction(trx, self.acc, opts=TxOpts(skip_confirmation=False))
         print('result:', result)
 
@@ -358,6 +368,7 @@ class SolanaTests(unittest.TestCase):
         source = authority
         destination = 'EV6VidfoaoHDoT4sUCNQz96us2YAumqXo9ZJ4PQBVLjJ'
         # d2040000 01 59a449cd7fd8fbcf34d103d98f2c05245020e35b c1566af4699928fdf9be097ca3dc47ece39f8f8e
+        eth_tx = bytearray.fromhex('f86b808503bfa2810082520894454c5477a55486afc43f069b2ee14246f6943e5e870e35fa931a00008078a0ce610aa6cf323602e3456d97481caee71c75b43aa5abb52740fc0bdcea50501ea0120796bc1e87e74f50a7bac5323b1c91564e891fd4a4e322888d90855ad5a701')
 
         print('authority:', authority, nonce)
 
@@ -366,7 +377,8 @@ class SolanaTests(unittest.TestCase):
             amount=1234,
             nonce=nonce,
             eth_token=eth_token,
-            eth_acc=eth_acc))
+            eth_acc=eth_acc,
+            eth_tx=eth_tx))
         print('TRANSFER_LAYOUT:', data.hex())
 
         trx = Transaction().add(

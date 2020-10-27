@@ -23,6 +23,10 @@ pub enum MetamaskError {
     #[error("Token is not registered")]
     TokenNotRegistered,
 
+    /// Try to transfer token with invalid signed transaction.
+    #[error("Ethereum transaction has invalid format")]
+    EthereumTxInvalidFormat,
+
     /// Try to transfer token with not signed or wrong signed transaction.
     #[error("Ethereum transaction has wrong signature")]
     EthereumTxSignedWrong,

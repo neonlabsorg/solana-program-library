@@ -6,7 +6,7 @@ from solana._layouts.shared import PUBLIC_KEY_LAYOUT, RUST_STRING_LAYOUT
 from solana.transaction import AccountMeta, TransactionInstruction, Transaction
 import base58
 import base64
-from construct import Bytes, Int8ul, Int32ul, Int64ul, Pass  # type: ignore
+from construct import Bytes, GreedyBytes, Int8ul, Int32ul, Int64ul, Pass  # type: ignore
 from construct import Struct as cStruct
 import subprocess
 from eth_keys import keys as eth_keys
@@ -19,7 +19,7 @@ token_id = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
 def create_program_address(seeds, programId):
     seeds_str = ' '.join([s.hex() for s in seeds])
     result = subprocess.check_output([
-            '/mnt/working/solana/solana.git/target/debug/solana',
+            '/root/Downloads/solana-1.3.14/target/debug/solana',
             'create-program-address',
             seeds_str,
             programId])
@@ -91,6 +91,7 @@ TRANSFER_LAYOUT = cStruct(
     "nonce" / Int8ul,
     "eth_token" / Bytes(20),
     "eth_acc" / Bytes(20),
+    "eth_tx" / GreedyBytes
 )
 
 TRANSFER_LAMPORTS_LAYOUT = cStruct(
@@ -98,6 +99,7 @@ TRANSFER_LAMPORTS_LAYOUT = cStruct(
     "amount" / Int64ul,
     "nonce" / Int8ul,
     "eth_acc" / Bytes(20),
+    "eth_tx" / GreedyBytes
 )
 
 class AccountInfo(NamedTuple):
@@ -174,7 +176,7 @@ class WrapperProgram():
         data = self._getAccountData(token, 82, owner=token_id)
         return int.from_bytes(data[36+8:36+8+1], "little")
 
-    def transfer(self, eth_token, eth_acc, source, destination, amount):
+    def transfer(self, eth_token, eth_acc, source, destination, amount, eth_tx):
         print('--- transfer:', eth_token, eth_acc, source, destination, amount)
         (authority, nonceAuthority) = create_program_address([bytes(eth_token), bytes(eth_acc)], self.program)
         data = TRANSFER_LAYOUT.build(dict(
@@ -183,6 +185,7 @@ class WrapperProgram():
             nonce=nonceAuthority,
             eth_token=bytes(eth_token),
             eth_acc=bytes(eth_acc),
+            eth_tx=bytes(eth_tx),
         ))
         return TransactionInstruction(program_id=self.program, data=data, keys=[
                 AccountMeta(pubkey=token_id, is_signer=False, is_writable=False),
@@ -191,7 +194,7 @@ class WrapperProgram():
                 AccountMeta(pubkey=authority, is_signer=False, is_writable=False)])
 
 
-    def transferLamports(self, eth_acc, destination, amount):
+    def transferLamports(self, eth_acc, destination, amount, eth_tx):
         (source, nonce) = create_program_address([bytes(eth_acc), 'lamports'.encode('ascii')], self.program)
         if isinstance(destination, EthereumAddress):
             (destination, nonceDest) = create_program_address([bytes(destination), 'lamports'.encode('ascii')], self.program)
@@ -201,6 +204,7 @@ class WrapperProgram():
             amount=amount,
             nonce=nonce,
             eth_acc=bytes(eth_acc),
+            eth_tx=bytes(eth_tx),
         ))
         return TransactionInstruction(program_id=self.program, data=data, keys=[
                 AccountMeta(pubkey=source, is_signer=False, is_writable=True),
