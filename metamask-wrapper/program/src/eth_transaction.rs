@@ -176,6 +176,9 @@ pub enum GetTxError {
     InvalidV,
     InvalidSignatureValues,
     RecoveryIdFail,
+    MessageParseFail,
+    SignatureParseFail,
+    CannotRecover,
 }
 
 pub fn get_tx_sender(tx: &SignedTransaction) -> Result<Address, GetTxError> {
@@ -236,19 +239,19 @@ pub fn get_tx_sender(tx: &SignedTransaction) -> Result<Address, GetTxError> {
 
     let msg_res = Message::parse_slice(&sig_hash);
     if msg_res.is_err() {
-        return Err(GetTxError::RecoveryIdFail);
+        return Err(GetTxError::MessageParseFail);
     }
     let msg = msg_res.unwrap();
 
     let sign_res = Signature::parse_slice(&compact_bytes);
     if sign_res.is_err() {
-        return Err(GetTxError::RecoveryIdFail);
+        return Err(GetTxError::SignatureParseFail);
     }
     let sign = sign_res.unwrap();
 
     let rec_res = recover(&msg, &sign, &rid);
     if rec_res.is_err() {
-        return Err(GetTxError::RecoveryIdFail);
+        return Err(GetTxError::CannotRecover);
     }
     let pk = rec_res.unwrap();
     let pk_data = pk.serialize();
