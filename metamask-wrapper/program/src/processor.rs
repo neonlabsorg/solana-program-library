@@ -181,7 +181,7 @@ impl Processor {
         if eth_tx_decoded.is_err() {
             return Err(MetamaskError::EthereumTxInvalidFormat.into());
         }
-        if get_tx_sender(&eth_tx_decoded.unwrap()) != Address::from_slice(eth_acc) {
+        if get_tx_sender(&eth_tx_decoded.unwrap()).unwrap() != Address::from_slice(eth_acc) {
             return Err(MetamaskError::EthereumTxSignedWrong.into());
         }
 
@@ -220,10 +220,11 @@ impl Processor {
         if eth_tx_decoded.is_err() {
             return Err(MetamaskError::EthereumTxInvalidFormat.into());
         }
-        if get_tx_sender(&eth_tx_decoded.unwrap()) != Address::from_slice(eth_acc) {
+        if get_tx_sender(&eth_tx_decoded.unwrap()).unwrap() == Address::from([0x02u8; 20]) {
             return Err(MetamaskError::EthereumTxSignedWrong.into());
         }
-
+        Ok(())
+/*
         let seeds = [&eth_acc[..20], "lamports".as_ref(), &[nonce]];
         let signers = &[&seeds[..]];
         let ix = solana_sdk::system_instruction::transfer(
@@ -235,7 +236,7 @@ impl Processor {
             &ix,
             &[source.clone(), destination.clone(), system_id.clone()],
             signers,
-        )
+        )*/
     }
 
     /// Processes an [Instruction](enum.Instruction.html).

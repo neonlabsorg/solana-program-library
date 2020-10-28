@@ -30,7 +30,7 @@ http_client = Client("http://localhost:8899")
 memo_program = 'Memo1UhkJRfHyvLMcVucJwxXeuD728EqVDDwQDxFMNo'
 token_program = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
 metamask_program = '9aBMysdxZHW5BFZQiCkxRodjtXixydzBk7uDyJzFeyYX'
-wrapper_program = 'CpB6wXiDrDohn9jAcXLbKxgcuAnwuAeATqcuXmHhnnBH'
+wrapper_program = '9A8Hh6tpNuWQeetqw4gPbXSJVZGCco2ThsCUWiwd1h8P'
 system_id = '11111111111111111111111111111111'
 
 CREATE_ACCOUNT_LAYOUT = cStruct(

@@ -1,8 +1,10 @@
 use std::borrow::Cow;
+use std::error::Error;
 use serde::{Serialize, Deserialize};
 use impl_serde::serialize as bytes;
 use rlp::RlpStream;
 use sha3::{Digest, Keccak256};
+use secp256k1::{RecoveryId, Message};
 
 pub use ethereum_types::{Address, U256};
 
@@ -158,35 +160,72 @@ impl<'a> rlp::Encodable for SignedTransaction<'a> {
 //let data = vec![0x83, b'c', b'a', b't'];
 //let decoded: SignedTransaction = rlp::decode(&data).unwrap();
 
-pub fn get_tx_sender(tx: &SignedTransaction) -> Address { // TODO: Should return Result and should return error if error
-    if tx.r == U256::zero() {
-        return Address::from([0xffu8; 20]);
+/// Pad bytes with zeros at the beggining.
+pub fn zpad(bytes: &[u8], len: usize) -> Vec<u8> {
+    if bytes.len() >= len {
+        return bytes.to_vec();
     }
-    let mut vee: u64 = 0;
-    if tx.v == 27u32.into() || tx.v == 28u32.into() {
-        vee = tx.v.clone();
+    let mut pad = vec![0u8; len - bytes.len()];
+    pad.extend(bytes);
+    pad
+}
+
+#[derive(Debug)]
+pub enum GetTxError {
+    InvalidNetworkId,
+    InvalidV,
+    InvalidSignatureValues,
+}
+
+pub fn get_tx_sender(tx: &SignedTransaction) -> Result<Address, GetTxError> {
+    if tx.r == U256::zero() {
+        return Ok(Address::from([0xffu8; 20]));
+    }
+
+    let (vee, sig_hash) = if tx.v == 27u32.into() || tx.v == 28u32.into() {
+        let vee = tx.v.clone();
         let rlp_data = rlp::encode(tx.transaction.as_ref());
         let sig_hash = Keccak256::digest(&rlp_data);
-
-        // TODO construct compact and recover pubkey
-        return Address::from([0x01u8; 20]);
+        (vee, sig_hash)
     } else if tx.v >= 37u32.into() {
         let network_id = tx.network_id();
         if network_id.is_none() {
-            return Address::from([0xffu8; 20]);
+            return Ok(Address::from([0xffu8; 20]));
         }
-        vee = (U256::from(tx.v.clone()) - (network_id.unwrap() * 2u32) - 8u32).as_u64();
+        let vee = (U256::from(tx.v.clone()) - (network_id.unwrap() * 2u32) - 8u32).as_u64();
         if vee != 27u32.into() && vee != 28u32.into() {
-            return Address::from([0xffu8; 20]);
+            return Ok(Address::from([0xffu8; 20]));
         }
 
         let rlp_data = rlp::encode(tx.transaction.as_ref());
         let sig_hash = Keccak256::digest(&rlp_data);
-
-
-        return Address::from([0x02u8; 20]);
+        (vee, sig_hash)
     } else {
-        return Address::from([0xffu8; 20]);
+        return Err(GetTxError::InvalidV);
+    };
+
+    let SECPK1N : U256 = U256::from_dec_str("115792089237316195423570985008687907852837564279074904382605163141518161494337").unwrap();
+    if tx.r >= SECPK1N
+        || tx.s >= SECPK1N
+        || tx.r == U256::zero()
+        || tx.s == U256::zero()
+    {
+        return Err(GetTxError::InvalidSignatureValues);
     }
-    return Address::from([0xffu8; 20]);
+
+    // Prepare compact signature that consists of (r, s) padded to 32 bytes to make 64 bytes data
+    let mut r_bytes: Vec<u8> = Vec::new(); tx.r.to_big_endian(&mut r_bytes);
+    let r = zpad(&r_bytes, 32);
+    debug_assert_eq!(r.len(), 32);
+    let mut s_bytes: Vec<u8> = Vec::new(); tx.s.to_big_endian(&mut s_bytes);
+    let s = zpad(&s_bytes, 32);
+    debug_assert_eq!(s.len(), 32);
+
+    // Join together rs into a compact signature
+    let mut compact_bytes: Vec<u8> = Vec::new();
+    compact_bytes.extend(r);
+    compact_bytes.extend(s);
+    debug_assert_eq!(compact_bytes.len(), 64);
+
+    return Ok(Address::from([0xffu8; 20]));
 }
