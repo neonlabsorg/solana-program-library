@@ -4,7 +4,7 @@ use serde::{Serialize, Deserialize};
 use impl_serde::serialize as bytes;
 use rlp::RlpStream;
 use sha3::{Digest, Keccak256};
-use secp256k1::{RecoveryId, Message};
+use secp256k1::{RecoveryId, Message, Signature, recover};
 
 pub use ethereum_types::{Address, U256};
 
@@ -175,6 +175,7 @@ pub enum GetTxError {
     InvalidNetworkId,
     InvalidV,
     InvalidSignatureValues,
+    RecoveryIdFail,
 }
 
 pub fn get_tx_sender(tx: &SignedTransaction) -> Result<Address, GetTxError> {
@@ -227,5 +228,31 @@ pub fn get_tx_sender(tx: &SignedTransaction) -> Result<Address, GetTxError> {
     compact_bytes.extend(s);
     debug_assert_eq!(compact_bytes.len(), 64);
 
-    return Ok(Address::from([0xffu8; 20]));
+    let rid_res = RecoveryId::parse_rpc(vee as u8);
+    if rid_res.is_err() {
+        return Err(GetTxError::RecoveryIdFail);
+    }
+    let rid = rid_res.unwrap();
+
+    let msg_res = Message::parse_slice(&sig_hash);
+    if msg_res.is_err() {
+        return Err(GetTxError::RecoveryIdFail);
+    }
+    let msg = msg_res.unwrap();
+
+    let sign_res = Signature::parse_slice(&compact_bytes);
+    if sign_res.is_err() {
+        return Err(GetTxError::RecoveryIdFail);
+    }
+    let sign = sign_res.unwrap();
+
+    let rec_res = recover(&msg, &sign, &rid);
+    if rec_res.is_err() {
+        return Err(GetTxError::RecoveryIdFail);
+    }
+    let pk = rec_res.unwrap();
+    let pk_data = pk.serialize();
+    let sender = Keccak256::digest(&pk_data);
+    debug_assert_eq!(sender.len(), 32);
+    return Ok(Address::from_slice(&sender));
 }
