@@ -218,10 +218,10 @@ pub fn get_tx_sender(tx: &SignedTransaction) -> Result<Address, GetTxError> {
     }
 
     // Prepare compact signature that consists of (r, s) padded to 32 bytes to make 64 bytes data
-    let mut r_bytes: Vec<u8> = Vec::new(); tx.r.to_big_endian(&mut r_bytes);
+    let mut r_bytes: [u8; 32] = [0; 32]; tx.r.to_big_endian(&mut r_bytes);
     let r = zpad(&r_bytes, 32);
     debug_assert_eq!(r.len(), 32);
-    let mut s_bytes: Vec<u8> = Vec::new(); tx.s.to_big_endian(&mut s_bytes);
+    let mut s_bytes: [u8; 32] = [0; 32]; tx.s.to_big_endian(&mut s_bytes);
     let s = zpad(&s_bytes, 32);
     debug_assert_eq!(s.len(), 32);
 
