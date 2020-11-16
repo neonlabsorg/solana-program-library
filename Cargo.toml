@@ -11,6 +11,7 @@ members = [
   "token/cli",
   "token/program",
   "token/program-v3",
+  "evm_loader/program",
 ]
 exclude = [
   "shared-memory/client",
