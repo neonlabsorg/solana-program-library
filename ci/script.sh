@@ -50,12 +50,11 @@ _ cargo run --manifest-path=utils/test-client/Cargo.toml
 #  _ git diff --exit-code token-swap/program/inc/token-swap.h
 #  _ cc token-swap/program/inc/token-swap.h -o target/token-swap.gch
 
-
-# Run clippy for all program crates, with the `program` feature enabled
+# For all BPF programs
 for Xargo_toml in $(git ls-files -- '*/Xargo.toml'); do
   program_dir=$(dirname "$Xargo_toml")
   (
-
+    # Run clippy for all program crates, with the `program` feature enabled
     cd $program_dir
     _ cargo +nightly clippy --features=program -- --deny=warnings
   )
@@ -63,9 +62,12 @@ for Xargo_toml in $(git ls-files -- '*/Xargo.toml'); do
   _ ./do.sh build "$program_dir"
 
   _ ./do.sh test "$program_dir"
+
+  _ ./do.sh dump "$program_dir"
 done
 
-# Run SPL Token's performance monitor
+# Run client tests
+_ cargo test --manifest-path=shared-memory/client/Cargo.toml -- --nocapture
 _ cargo test --manifest-path=token/perf-monitor/Cargo.toml -- --nocapture
 _ cargo test --manifest-path=themis/client_bn/Cargo.toml -- --nocapture
 _ cargo test --manifest-path=themis/client_ristretto/Cargo.toml -- --nocapture
@@ -105,5 +107,21 @@ js_token_swap() {
   npm run localnet:down
 }
 _ js_token_swap
+
+# Test token-lending js bindings
+js_token_lending() {
+  cd token-lending/js
+  time npm install || exit $?
+  time npm run lint || exit $?
+  time npm run build || exit $?
+
+  npm run cluster:localnet || exit $?
+  npm run localnet:down
+  npm run localnet:update || exit $?
+  npm run localnet:up || exit $?
+  time npm run start || exit $?
+  npm run localnet:down
+}
+_ js_token_lending
 
 exit 0

@@ -31,8 +31,8 @@ readCargoVariable() {
 
   while read -r name equals value _; do
     if [[ $name = "$variable" && $equals = = ]]; then
-      echo "${value//\"/}"
-      return
+        echo "${value//\"/}"
+        return
     fi
   done < <(cat "$Cargo_toml")
   echo "Unable to locate $variable in $Cargo_toml" 1>&2
@@ -40,25 +40,30 @@ readCargoVariable() {
 
 perform_action() {
     set -e
-    projectDir="$CALLER_PWD"/$2
+    # Use relative path if arg starts with "."
+    if [[ $2 == .* ]]; then
+        projectDir="$CALLER_PWD"/$2
+    else
+        projectDir="$PWD"/$2
+    fi
     targetDir="$PWD"/target
     features=
 
     crateName="$(readCargoVariable name "$projectDir/Cargo.toml")"
+    so_path="$targetDir/$profile"
+    so_name="${crateName//\-/_}"
+    so_name_unstripped="${so_name}_unstripped"
 
     if [[ -f "$projectDir"/Xargo.toml ]]; then
-      features="--features=program"
+        features="--features=program"
     fi
     case "$1" in
     build)
         if [[ -f "$projectDir"/Xargo.toml ]]; then
-          echo "build $crateName ($projectDir)"
-          "$sdkDir"/rust/build.sh "$projectDir"
-
-          so_path="$targetDir/$profile"
-          so_name="${crateName//\-/_}"
-          cp "$so_path/${so_name}.so" "$so_path/${so_name}_debug.so"
-          "$sdkDir"/dependencies/llvm-native/bin/llvm-objcopy --strip-all "$so_path/${so_name}.so" "$so_path/$so_name.so"
+            echo "build $crateName ($projectDir)"
+            "$sdkDir"/rust/build.sh "$projectDir"
+            cp "$so_path/${so_name}.so" "$so_path/${so_name_unstripped}.so"
+            "$sdkDir"/dependencies/llvm-native/bin/llvm-objcopy --strip-all "$so_path/${so_name}.so" "$so_path/${so_name}.so"
         else
             echo "$projectDir does not contain a program, skipping"
         fi
@@ -90,46 +95,57 @@ perform_action() {
         ;;
     dump)
         # Dump depends on tools that are not installed by default and must be installed manually
-        # - greadelf
+        # - readelf
         # - rustfilt
-        (
-            pwd
-            "$0" build "$2"
+        if [[ -f "$projectDir"/Xargo.toml ]]; then
+            if ! which rustfilt > /dev/null; then
+                echo "Error: rustfilt not found.  It can be installed by running: cargo install rustfilt"
+                exit 1
+            fi
+            if ! which readelf > /dev/null; then
+                if [[ $(uname) = Darwin ]]; then
+                    echo "Error: readelf not found.  It can be installed by running: brew install binutils"
+                else
+                    echo "Error: readelf not found."
+                fi
+                exit 1
+            fi
 
-            so_path="$targetDir/$profile"
-            so_name="spl_${2//\-/_}"
-            so="$so_path/${so_name}_debug.so"
+            (
+              cd "$CALLER_PWD"
+              "$0" build "$2"
+            )
+
+            echo "dump $crateName ($projectDir)"
+
+            so="$so_path/${so_name}.so"
+
+            if [[ ! -r "$so" ]]; then
+                echo "Error: No dump created, cannot read $so"
+                exit 1
+            fi
             dump="$so_path/${so_name}_dump"
-
-            echo $so_path
-            echo $so_name
-            echo $so
-            echo $dump
-
-            if [ -f "$so" ]; then
-                ls \
-                    -la \
-                    "$so" \
-                    >"${dump}_mangled.txt"
-                greadelf \
-                    -aW \
-                    "$so" \
-                    >>"${dump}_mangled.txt"
+            (
+                set -x
+                ls -la "$so" > "${dump}_mangled.txt"
+                readelf -aW "$so" >>"${dump}_mangled.txt"
                 "$sdkDir/dependencies/llvm-native/bin/llvm-objdump" \
                     -print-imm-hex \
                     --source \
                     --disassemble \
                     "$so" \
-                    >>"${dump}_mangled.txt"
-                sed \
-                    s/://g \
-                    <"${dump}_mangled.txt" |
-                    rustfilt \
-                        >"${dump}.txt"
+                    >> "${dump}_mangled.txt"
+                sed s/://g <"${dump}_mangled.txt" | rustfilt >"${dump}.txt"
+            )
+            if [[ -f "$dump.txt" ]]; then
+                echo "Created $dump.txt"
             else
-                echo "Warning: No dump created, cannot find: $so"
+                echo "Error: No dump created"
+                exit 1
             fi
-        )
+        else
+            echo "$projectDir does not contain a program, skipping"
+        fi
         ;;
     fmt)
         (
@@ -192,3 +208,5 @@ else
       perform_action "$1" "$2" "${@:3}"
     fi
 fi
+
+exit 0
