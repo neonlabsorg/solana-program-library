@@ -11,6 +11,7 @@ members = [
   "token/cli",
   "token/program",
   "token/program-v3",
+  "metamask-wrapper/program",
   "evm_loader/program",
 ]
 exclude = [
