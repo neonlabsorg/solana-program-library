@@ -8,12 +8,13 @@
 use std::convert::TryInto;
 use solana_sdk::{
     account_info::{next_account_info, AccountInfo},
+    instruction::{AccountMeta, Instruction},
     entrypoint, entrypoint::{ProgramResult},
     program_error::{ProgramError}, pubkey::Pubkey,
     program_utils::{limited_deserialize},
     loader_instruction::LoaderInstruction,
     system_instruction::{create_account, create_account_with_seed},
-    program::invoke_signed,
+    program::invoke_signed, program::invoke,
     info,
 };
 
@@ -176,6 +177,9 @@ fn process_instruction<'a>(
         EvmInstruction::Call {bytes} => {
             do_call(program_id, accounts, bytes)
         },
+        EvmInstruction::OnReturn {bytes} => {
+            Ok(())
+        },
     };
 
 /*    let result = if program_lamports == 0 {
@@ -320,7 +324,7 @@ fn do_call<'a>(
     info!(&("   caller: ".to_owned() + &caller.get_ether().to_string()));
     info!(&(" contract: ".to_owned() + &contract.get_ether().to_string()));
 
-    let (exit_reason, result) = executor.transact_call(
+    let (exit_reason, mut result) = executor.transact_call(
             caller.get_ether(),
             contract.get_ether(),
             U256::zero(),
@@ -346,6 +350,18 @@ fn do_call<'a>(
         info!("Not succeed execution");
         return Err(ProgramError::InvalidInstructionData);
     }
+
+    // TODO: this should be separate method in instruction.rs
+    result.insert(0, 5u8);
+    invoke(
+        &Instruction {
+            program_id: *program_id,
+            accounts: [].to_vec(),
+            data: result,
+        },
+        &[program_info.clone()]
+    )?;
+
     Ok(())
 }
 
