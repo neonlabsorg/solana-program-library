@@ -310,6 +310,7 @@ fn do_call<'a>(
 {
     info!("do_call");
     let account_info_iter = &mut accounts.iter();
+    let myself_info = next_account_info(account_info_iter)?;
     let program_info = next_account_info(account_info_iter)?;
     let caller_info = next_account_info(account_info_iter)?;
     let signer_info = next_account_info(account_info_iter)?;
@@ -359,7 +360,7 @@ fn do_call<'a>(
             accounts: [].to_vec(),
             data: result,
         },
-        &[program_info.clone()]
+        &accounts
     )?;
 
     Ok(())
