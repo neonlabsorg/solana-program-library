@@ -316,7 +316,8 @@ fn do_call<'a>(
     let signer_info = next_account_info(account_info_iter)?;
     let clock_info = next_account_info(account_info_iter)?;
 
-    let mut backend = SolanaBackend::new(program_id, accounts, accounts.last().unwrap())?;
+    let (_, rest) = accounts.split_first().unwrap();
+    let mut backend = SolanaBackend::new(program_id, rest, rest.last().unwrap())?;
     let config = evm::Config::istanbul();
     let mut executor = StackExecutor::new(&backend, usize::max_value(), &config);
     info!("Executor initialized");
@@ -353,10 +354,9 @@ fn do_call<'a>(
     }
 
     // TODO: this should be separate method in instruction.rs
-    result.insert(0, 5u8);
     invoke(
         &Instruction {
-            program_id: *program_id,
+            program_id: *myself_info.key,
             accounts: [].to_vec(),
             data: result,
         },
