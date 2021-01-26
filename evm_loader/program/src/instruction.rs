@@ -1,7 +1,7 @@
 use serde::{Serialize, Deserialize};
 use solana_sdk::{program_error::ProgramError, pubkey::Pubkey};
 use std::convert::TryInto;
-use primitive_types::H160;
+use primitive_types::{H160, H256};
 
 /// Create a new account
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -89,6 +89,14 @@ pub enum EvmInstruction<'a> {
     OnReturn {
         /// Returned data
         bytes: &'a [u8],
+    },
+
+    /// Called action event
+    OnEvent {
+        /// Topic
+        topic: H256,
+        /// Data
+        data: &'a [u8],
     },
 }
 
