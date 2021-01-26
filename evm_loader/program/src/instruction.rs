@@ -93,8 +93,8 @@ pub enum EvmInstruction<'a> {
 
     /// Called action event
     OnEvent {
-        /// Topic
-        topic: H256,
+        address: H160,
+        topics: Vec<H256>,
         /// Data
         data: &'a [u8],
     },
@@ -159,6 +159,21 @@ impl<'a> EvmInstruction<'a> {
             },
             5 => {
                 EvmInstruction::OnReturn {bytes: rest}
+            },
+            6 => {
+                let (address, rest) = rest.split_at(20);
+                let address = H160::from_slice(&*address); //address.try_into().map_err(|_| InvalidInstructionData)?;
+                
+                let (topics_cnt, mut rest) = rest.split_at(8);
+                let topics_cnt = topics_cnt.try_into().ok().map(u64::from_le_bytes).ok_or(InvalidInstructionData)?;
+                let mut topics = Vec::new();
+                for i in 1..=topics_cnt {
+                    let (topic, rest2) = rest.split_at(32);
+                    let topic = H256::from_slice(&*topic);
+                    topics.push(topic);
+                    rest = rest2;
+                }
+                EvmInstruction::OnEvent {address, topics, data: rest}
             },
             _ => return Err(InvalidInstructionData),
         })

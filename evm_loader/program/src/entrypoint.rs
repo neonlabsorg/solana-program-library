@@ -180,6 +180,9 @@ fn process_instruction<'a>(
         EvmInstruction::OnReturn {bytes} => {
             Ok(())
         },
+        EvmInstruction::OnEvent {address, topics, data} => {
+            Ok(())
+        },
     };
 
 /*    let result = if program_lamports == 0 {
@@ -354,6 +357,7 @@ fn do_call<'a>(
     }
 
     // TODO: this should be separate method in instruction.rs
+    result.insert(0, 5u8);
     invoke(
         &Instruction {
             program_id: *myself_info.key,
