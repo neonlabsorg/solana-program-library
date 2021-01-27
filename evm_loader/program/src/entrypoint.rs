@@ -296,8 +296,8 @@ fn do_finalize<'a>(program_id: &Pubkey, accounts: &'a [AccountInfo<'a>]) -> Prog
 
     if exit_reason.is_succeed() {
         info!("Succeed execution");
-        let (applies, logs) = executor.deconstruct();
-        backend.apply(applies, logs, false)?;
+        let (applies, _) = executor.deconstruct();
+        backend.apply(applies, false)?;
         Ok(())
     } else {
         info!("Not succeed execution");
@@ -313,14 +313,13 @@ fn do_call<'a>(
 {
     info!("do_call");
     let account_info_iter = &mut accounts.iter();
-    let myself_info = next_account_info(account_info_iter)?;
     let program_info = next_account_info(account_info_iter)?;
     let caller_info = next_account_info(account_info_iter)?;
     let signer_info = next_account_info(account_info_iter)?;
+    let myself_info = next_account_info(account_info_iter)?;
     let clock_info = next_account_info(account_info_iter)?;
 
-    let (_, rest) = accounts.split_first().unwrap();
-    let mut backend = SolanaBackend::new(program_id, rest, rest.last().unwrap())?;
+    let mut backend = SolanaBackend::new(program_id, accounts, accounts.last().unwrap())?;
     let config = evm::Config::istanbul();
     let mut executor = StackExecutor::new(&backend, usize::max_value(), &config);
     info!("Executor initialized");
@@ -341,8 +340,8 @@ fn do_call<'a>(
     info!(match exit_reason {
         ExitReason::Succeed(_) => {
             let (applies, logs) = executor.deconstruct();
-            let logs2 = backend.apply(applies, logs, false)?;
-            for log in logs2 {
+            backend.apply(applies, false)?;
+            for log in logs {
                 let ix = on_event(myself_info.key, log)?;
                 invoke(
                     &ix,
