@@ -25,7 +25,7 @@ use crate::solana_backend::{
 
 use crate::{
 //    bump_allocator::BumpAllocator,
-    instruction::EvmInstruction,
+    instruction::{EvmInstruction, on_return, on_event},
     account_data::AccountData,
     solidity_account::SolidityAccount,
 };
@@ -341,7 +341,14 @@ fn do_call<'a>(
     info!(match exit_reason {
         ExitReason::Succeed(_) => {
             let (applies, logs) = executor.deconstruct();
-            backend.apply(applies, logs, false)?;
+            let logs2 = backend.apply(applies, logs, false)?;
+            for log in logs2 {
+                let ix = on_event(myself_info.key, log)?;
+                invoke(
+                    &ix,
+                    &accounts
+                )?;
+            }
             info!("Applies done");
             "succeed"
         },
@@ -356,14 +363,9 @@ fn do_call<'a>(
         return Err(ProgramError::InvalidInstructionData);
     }
 
-    // TODO: this should be separate method in instruction.rs
-    result.insert(0, 5u8);
+    let ix = on_return(myself_info.key, result)?;
     invoke(
-        &Instruction {
-            program_id: *myself_info.key,
-            accounts: [].to_vec(),
-            data: result,
-        },
+        &ix,
         &accounts
     )?;
 

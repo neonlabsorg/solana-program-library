@@ -1,7 +1,11 @@
 use serde::{Serialize, Deserialize};
-use solana_sdk::{program_error::ProgramError, pubkey::Pubkey};
+use solana_sdk::{
+    program_error::ProgramError, pubkey::Pubkey,
+    instruction::Instruction,
+};
 use std::convert::TryInto;
 use primitive_types::{H160, H256};
+use evm::backend::Log;
 
 /// Create a new account
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -178,4 +182,33 @@ impl<'a> EvmInstruction<'a> {
             _ => return Err(InvalidInstructionData),
         })
     }
+}
+
+/// Creates a `OnReturn` instruction.
+pub fn on_return(
+    myself_program_id: &Pubkey,
+    mut result: Vec<u8>
+) -> Result<Instruction, ProgramError> {
+    result.insert(0, 5u8);
+
+    Ok(Instruction {
+        program_id: *myself_program_id,
+        accounts: [].to_vec(),
+        data: result,
+    })
+}
+
+/// Creates a `OnEvent` instruction.
+pub fn on_event(
+    myself_program_id: &Pubkey,
+    log: Log
+) -> Result<Instruction, ProgramError> {
+    let mut data = Vec::new();
+    data.insert(0, 6u8);
+
+    Ok(Instruction {
+        program_id: *myself_program_id,
+        accounts: [].to_vec(),
+        data,
+    })
 }
