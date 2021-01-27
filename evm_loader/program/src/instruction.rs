@@ -206,6 +206,15 @@ pub fn on_event(
     let mut data = Vec::new();
     data.insert(0, 6u8);
 
+    data.extend_from_slice(log.address.as_bytes());
+
+    data.extend_from_slice(&log.topics.len().to_le_bytes());
+    for topic in log.topics {
+        data.extend_from_slice(topic.as_bytes());
+    }
+
+    data.extend(&log.data);
+
     Ok(Instruction {
         program_id: *myself_program_id,
         accounts: [].to_vec(),
