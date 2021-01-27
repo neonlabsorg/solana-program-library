@@ -257,6 +257,7 @@ fn do_finalize<'a>(program_id: &Pubkey, accounts: &'a [AccountInfo<'a>]) -> Prog
     let program_info = next_account_info(account_info_iter)?;
     let caller_info = next_account_info(account_info_iter)?;
     let signer_info = next_account_info(account_info_iter)?;
+    let myself_info = next_account_info(account_info_iter)?;
     let clock_info = next_account_info(account_info_iter)?;
     let rent_info = next_account_info(account_info_iter)?;
 
@@ -296,8 +297,15 @@ fn do_finalize<'a>(program_id: &Pubkey, accounts: &'a [AccountInfo<'a>]) -> Prog
 
     if exit_reason.is_succeed() {
         info!("Succeed execution");
-        let (applies, _) = executor.deconstruct();
+        let (applies, logs) = executor.deconstruct();
         backend.apply(applies, false)?;
+        for log in logs {
+            let ix = on_event(myself_info.key, log)?;
+            invoke(
+                &ix,
+                &accounts
+            )?;
+        }
         Ok(())
     } else {
         info!("Not succeed execution");
