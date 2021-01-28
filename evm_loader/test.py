@@ -9,6 +9,7 @@ import time
 import os
 import json
 from hashlib import sha256
+from base58 import b58decode
 from spl.token.client import Token
 
 import subprocess
@@ -132,11 +133,12 @@ class EvmLoader:
         print(type(output), output)
         return json.loads(output.splitlines()[-1])
 
-    def call(self, contract, caller, signer, data, accs=None):
+    def call(self, contract, caller, signer, data, accs=None, raw_result=False):
         accounts = [
                 AccountMeta(pubkey=contract, is_signer=False, is_writable=True),
                 AccountMeta(pubkey=caller, is_signer=False, is_writable=True),
                 AccountMeta(pubkey=signer.public_key(), is_signer=True, is_writable=False),
+                AccountMeta(pubkey=self.loader_id, is_signer=False, is_writable=False),
                 AccountMeta(pubkey=PublicKey("SysvarC1ock11111111111111111111111111111111"), is_signer=False, is_writable=False),
             ]
         if accs: accounts.extend(accs)
@@ -144,6 +146,8 @@ class EvmLoader:
         trx = Transaction().add(
             TransactionInstruction(program_id=self.loader_id, data=data, keys=accounts))
         result = http_client.send_transaction(trx, signer, opts=TxOpts(skip_confirmation=False, preflight_commitment="root"))["result"]
+        if raw_result:
+            return result
         messages = result["meta"]["logMessages"]
         res = messages[messages.index("Program log: succeed")+1]
         if not res.startswith("Program log: "): raise Exception("Invalid program logs: no result")
@@ -341,6 +345,107 @@ class EvmLoaderTests2(unittest.TestCase):
             )
         print('transfer result:', result.hex())
 
+    def test_evmloader_returns_events(self):
+        reId = self.loader.deployChecked("returnsevents.bin")["programId"]
+        print("ReturnsEvents program:", reId)
+        seed = "btc3"
+        seedData = bytes(seed, 'utf8')
+        
+        # Call addNoReturn for returnsevents
+        data = (bytes.fromhex("03c2eb5db1") + # 03 means call, next part means addNoReturn(uint8,uint8)
+                bytes.fromhex("%064x"%0x1) +
+                bytes.fromhex("%064x"%0x2)
+               )
+        print('addNoReturn arguments:', data.hex())
+        result = self.loader.call(
+                contract=reId,
+                caller=PublicKey(self.caller),
+                signer=self.acc,
+                data=data,
+                accs=None,
+                raw_result=True)
+        print('addNoReturn result:', result)
+        self.assertEqual(result['meta']['err'], None)
+        self.assertEqual(len(result['meta']['innerInstructions']), 1)
+        self.assertEqual(len(result['meta']['innerInstructions'][0]['instructions']), 1)
+        data = b58decode(result['meta']['innerInstructions'][0]['instructions'][0]['data'])
+        self.assertEqual(data, b'\x05') # 5 means OnReturn, and no value next - empty
+        print('')
+
+        # Call addReturn for returnsevents
+        data = (bytes.fromhex("03c14f01d7") + # 03 means call, next part means addReturn(uint8,uint8)
+                bytes.fromhex("%064x"%0x1) +
+                bytes.fromhex("%064x"%0x2)
+               )
+        print('addReturn arguments:', data.hex())
+        result = self.loader.call(
+                contract=reId,
+                caller=PublicKey(self.caller),
+                signer=self.acc,
+                data=data,
+                accs=None,
+                raw_result=True)
+        print('addReturn result:', result)
+        self.assertEqual(result['meta']['err'], None)
+        self.assertEqual(len(result['meta']['innerInstructions']), 1)
+        self.assertEqual(len(result['meta']['innerInstructions'][0]['instructions']), 1)
+        data = b58decode(result['meta']['innerInstructions'][0]['instructions'][0]['data'])
+        self.assertEqual(data[:1], b'\x05')
+        self.assertEqual(data[1:], b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03')
+        print('')
+
+        # Call addReturnEvent for returnsevents
+        data = (bytes.fromhex("030049a148") + # 03 means call, next part means addReturnEvent(uint8,uint8)
+                bytes.fromhex("%064x"%0x1) +
+                bytes.fromhex("%064x"%0x2)
+               )
+        print('addReturnEvent arguments:', data.hex())
+        result = self.loader.call(
+                contract=reId,
+                caller=PublicKey(self.caller),
+                signer=self.acc,
+                data=data,
+                accs=None,
+                raw_result=True)
+        print('addReturnEvent result:', result)
+        self.assertEqual(result['meta']['err'], None)
+        self.assertEqual(len(result['meta']['innerInstructions']), 1)
+        self.assertEqual(len(result['meta']['innerInstructions'][0]['instructions']), 2)
+        data = b58decode(result['meta']['innerInstructions'][0]['instructions'][0]['data'])
+        self.assertEqual(data[:1], b'\x06') # 6 means OnEvent
+        self.assertEqual(data[-32:], b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03')
+        data = b58decode(result['meta']['innerInstructions'][0]['instructions'][1]['data'])
+        self.assertEqual(data[:1], b'\x05')
+        self.assertEqual(data[1:], b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03')
+        print('')
+
+        # Call addReturnEventTwice for returnsevents
+        data = (bytes.fromhex("036268c754") + # 03 means call, next part means addReturnEventTwice(uint8,uint8)
+                bytes.fromhex("%064x"%0x1) +
+                bytes.fromhex("%064x"%0x2)
+               )
+        print('addReturnEventTwice arguments:', data.hex())
+        result = self.loader.call(
+                contract=reId,
+                caller=PublicKey(self.caller),
+                signer=self.acc,
+                data=data,
+                accs=None,
+                raw_result=True)
+        print('addReturnEventTwice result:', result)
+        self.assertEqual(result['meta']['err'], None)
+        self.assertEqual(len(result['meta']['innerInstructions']), 1)
+        self.assertEqual(len(result['meta']['innerInstructions'][0]['instructions']), 3)
+        data = b58decode(result['meta']['innerInstructions'][0]['instructions'][0]['data'])
+        self.assertEqual(data[:1], b'\x06')
+        self.assertEqual(data[-32:], b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03')
+        data = b58decode(result['meta']['innerInstructions'][0]['instructions'][1]['data'])
+        self.assertEqual(data[:1], b'\x06')
+        self.assertEqual(data[-32:], b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05')
+        data = b58decode(result['meta']['innerInstructions'][0]['instructions'][2]['data'])
+        self.assertEqual(data[:1], b'\x05')
+        self.assertEqual(data[1:], b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05')
+        print('')
 
 
     def test_deployChecked(self):
