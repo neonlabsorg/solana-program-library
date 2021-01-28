@@ -133,7 +133,7 @@ class EvmLoader:
         print(type(output), output)
         return json.loads(output.splitlines()[-1])
 
-    def call(self, contract, caller, signer, data, accs=None, raw_result=False):
+    def call(self, contract, caller, signer, data, accs=None, raw_result=False, run_tx=True):
         accounts = [
                 AccountMeta(pubkey=contract, is_signer=False, is_writable=True),
                 AccountMeta(pubkey=caller, is_signer=False, is_writable=True),
@@ -143,8 +143,10 @@ class EvmLoader:
             ]
         if accs: accounts.extend(accs)
 
-        trx = Transaction().add(
-            TransactionInstruction(program_id=self.loader_id, data=data, keys=accounts))
+        instr = TransactionInstruction(program_id=self.loader_id, data=data, keys=accounts)
+        if not run_tx:
+            return instr
+        trx = Transaction().add(instr)
         result = http_client.send_transaction(trx, signer, opts=TxOpts(skip_confirmation=False, preflight_commitment="root"))["result"]
         if raw_result:
             return result
@@ -446,6 +448,32 @@ class EvmLoaderTests2(unittest.TestCase):
         self.assertEqual(data[:1], b'\x05')
         self.assertEqual(data[1:], b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05')
         print('')
+
+        # Call addReturnEventTwice 2 times in same trx
+        data1 = (bytes.fromhex("036268c754") + # 03 means call, next part means addReturnEventTwice(uint8,uint8)
+                bytes.fromhex("%064x"%0x1) +
+                bytes.fromhex("%064x"%0x2)
+               )
+        data2 = (bytes.fromhex("036268c754") + # 03 means call, next part means addReturnEventTwice(uint8,uint8)
+                bytes.fromhex("%064x"%0x3) +
+                bytes.fromhex("%064x"%0x4)
+               )
+        print('addReturnEventTwice*2 arguments:', data.hex())
+        trx = Transaction().add(self.loader.call(
+                contract=reId,
+                caller=PublicKey(self.caller),
+                signer=self.acc,
+                data=data1,
+                accs=None,
+                run_tx=False)).add(self.loader.call(
+                contract=reId,
+                caller=PublicKey(self.caller),
+                signer=self.acc,
+                data=data2,
+                accs=None,
+                run_tx=False))
+        result = http_client.send_transaction(trx, self.acc, opts=TxOpts(skip_confirmation=False, preflight_commitment="root"))["result"]
+        print('addReturnEventTwice*2 result:', result)
 
 
     def test_deployChecked(self):
