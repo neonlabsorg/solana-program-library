@@ -27,6 +27,7 @@ use crate::{
     instruction::EvmInstruction,
     account_data::AccountData,
     solidity_account::SolidityAccount,
+    transaction::check_tx,
 };
 
 use evm::{
@@ -175,6 +176,9 @@ fn process_instruction<'a>(
         },
         EvmInstruction::Call {bytes} => {
             do_call(program_id, accounts, bytes)
+        },
+        EvmInstruction::CheckEtheriumTX {raw_tx} => {
+            check_tx(raw_tx)
         },
     };
 

@@ -84,6 +84,11 @@ pub enum EvmInstruction<'a> {
         /// Call data
         bytes: &'a [u8],
     },
+
+    CheckEtheriumTX {
+        /// Call data
+        raw_tx: &'a [u8],
+    },
 }
 
 
@@ -142,6 +147,9 @@ impl<'a> EvmInstruction<'a> {
                 let space = space.try_into().ok().map(u64::from_le_bytes).ok_or(InvalidInstructionData)?;
 
                 EvmInstruction::CreateAccountWithSeed {base, seed, lamports, space, owner}
+            },
+            0xa1 => {
+                EvmInstruction::CheckEtheriumTX {raw_tx: rest}
             },
             _ => return Err(InvalidInstructionData),
         })
