@@ -9,10 +9,10 @@ pub mod entrypoint;
 //pub mod native_mint;
 //pub mod processor;
 //pub mod state;
-mod hamt;
-mod solana_backend;
-mod account_data;
-mod solidity_account;
+// mod hamt;
+// mod solana_backend;
+// mod account_data;
+// mod solidity_account;
 mod instruction;
 mod transaction;
 

@@ -13,21 +13,25 @@ use solana_sdk::{
     program_utils::{limited_deserialize},
     loader_instruction::LoaderInstruction,
     system_instruction::{create_account, create_account_with_seed},
-    program::invoke_signed,
+    sysvar::instructions::{load_current_index, load_instruction_at}, 
+    program::{invoke_signed, invoke},
     info,
+    secp256k1_program,
+    instruction::Instruction,
+    sysvar::instructions
 };
 
 //use crate::hamt::Hamt;
-use crate::solana_backend::{
-    SolanaBackend, solidity_address,
-};
+// use crate::solana_backend::{
+//     SolanaBackend, solidity_address,
+// };
 
 use crate::{
 //    bump_allocator::BumpAllocator,
     instruction::EvmInstruction,
-    account_data::AccountData,
-    solidity_account::SolidityAccount,
-    transaction::check_tx,
+    // account_data::AccountData,
+    // solidity_account::SolidityAccount,
+    transaction::{check_tx, make_secp256k1_instruction},
 };
 
 use evm::{
@@ -38,7 +42,9 @@ use evm::{
 use primitive_types::{U256};
 
 use std::{alloc::Layout, mem::size_of, ptr::null_mut, usize};
-use solana_sdk::entrypoint::HEAP_START_ADDRESS;
+// use solana_sdk::entrypoint::HEAP_START_ADDRESS;
+/// Start address of the memory region used for program heap.
+pub const HEAP_START_ADDRESS: usize = 12884901888; // 0x0_000_000_300_000_000usize
 
 
 use sha3::{Keccak256, Digest};
@@ -47,6 +53,7 @@ fn keccak256_digest(data: &[u8]) -> H256 {
     H256::from_slice(Keccak256::digest(&data).as_slice())
 }
 
+use impl_serde::rustc_hex::ToHex;
 
 const HEAP_LENGTH: usize = 1024*1024;
 
@@ -121,64 +128,55 @@ fn process_instruction<'a>(
 
     let result = match instruction {
         EvmInstruction::CreateAccount {lamports, space, ether, nonce} => {
-            let funding_info = next_account_info(account_info_iter)?;
-            let program_info = next_account_info(account_info_iter)?;
-
-            info!(&("Ether:".to_owned()+&(hex::encode(ether))+" "+&hex::encode([nonce])));
-
-            let expected_address = Pubkey::create_program_address(&[ether.as_bytes(), &[nonce]], program_id)?;
-            if expected_address != *program_info.key {
-                return Err(ProgramError::InvalidArgument);
-            };
-
-            let program_seeds = [ether.as_bytes(), &[nonce]];
-            invoke_signed(
-                &create_account(funding_info.key, program_info.key, lamports, AccountData::SIZE as u64 + space, program_id),
-                &accounts, &[&program_seeds[..]]
-            )?;
-            info!("create_account done");
-            
-            let mut data = program_info.data.borrow_mut();
-            let account_data = AccountData {ether, nonce, trx_count: 0u64, signer: *funding_info.key, code_size: 0u32};
-            account_data.pack(&mut data)?;
             Ok(())
         },
         EvmInstruction::CreateAccountWithSeed {base, seed, lamports, space, owner} => {
-            let funding_info = next_account_info(account_info_iter)?;
-            let created_info = next_account_info(account_info_iter)?;
-            let base_info = next_account_info(account_info_iter)?;
-
-            //info!(&("Ether:".to_owned()+&(hex::encode(ether))+" "+&hex::encode([nonce])));
-            if base_info.owner != program_id {return Err(ProgramError::InvalidArgument);}
-            let caller = SolidityAccount::new(base_info)?;
-
-            let program_seeds = [caller.account_data.ether.as_bytes(), &[caller.account_data.nonce]];
-            let seed = std::str::from_utf8(&seed).map_err(|_| ProgramError::InvalidArgument)?;
-            info!(&lamports.to_string());
-            info!(&space.to_string());
-            invoke_signed(
-                &create_account_with_seed(funding_info.key, created_info.key, &base, &seed, lamports, space, &owner),
-                &accounts, &[&program_seeds[..]]
-            )?;
-            info!("create_account_with_seed done");
-
             Ok(())
         },
         EvmInstruction::Write {offset, bytes} => {
-            let program_info = next_account_info(account_info_iter)?;
-            if program_info.owner != program_id {
-                return Err(ProgramError::InvalidArgument);
-            }
-            do_write(program_info, offset, &bytes)
+            Ok(())
         },
         EvmInstruction::Finalize => {
-            do_finalize(program_id, accounts)
+            Ok(())
         },
         EvmInstruction::Call {bytes} => {
-            do_call(program_id, accounts, bytes)
+            Ok(())
         },
         EvmInstruction::CheckEtheriumTX {raw_tx} => {
             check_tx(raw_tx)
+        },
+        EvmInstruction::CheckEtheriumTXCallProgram {message, sign, eth_addr} => {
+            let account_info_iter = &mut accounts.iter();
+            let program_account = next_account_info(account_info_iter)?;
+            let secp256_account = next_account_info(account_info_iter)?;
+            let sysvara_account = next_account_info(account_info_iter)?;  
+            
+            print_data(&sysvara_account.try_borrow_data()?);
+                    
+            info!(&( "message: ".to_owned() + &hex::encode(&message)));
+            info!(&("    sign: ".to_owned() + &hex::encode(&sign)));
+            info!(&("eth_addr: ".to_owned() + &hex::encode(&eth_addr)));
+         
+            let secp_instruction = make_secp256k1_instruction(message, sign, eth_addr);
+            invoke(&secp_instruction, accounts)?;
+
+            info!("call done");
+
+            for index in vec![0, 1, 2, 3, 4, 5] {
+                info!(&("index: ".to_owned() + &index.to_string()));  
+
+                match load_instruction_at(index, &sysvara_account.try_borrow_data()?) {
+                    Ok(instr) => {
+                        info!(&format!("ID: {}", instr.program_id));
+                        info!(&("INSTRUCTION: ".to_owned() + &hex::encode(&instr.data)));            
+                    },
+                    Err(err) => {
+                        info!("ERR");
+                    }
+                }                
+            }
+
+            Ok(())
         },
     };
 
@@ -209,179 +207,47 @@ fn process_instruction<'a>(
     result
 }
 
-fn do_create_account<'a>(program_id: &Pubkey, accounts: &'a [AccountInfo<'a>], instruction_data: &[u8]) -> ProgramResult {
-    info!("initialize account");
-/*
-    // If account not initialized - we can only create it...
-    let instruction: EvmInstruction = limited_deserialize(instruction_data)
-            .map_err(|_| ProgramError::InvalidInstructionData)?;
-    match instruction {
-        EvmInstruction::CreateAccount {lamports, space, ether, nonce } => {
-            let account_info_iter = &mut accounts.iter();
-            let program_info = next_account_info(account_info_iter)?;
-            let funding_info = next_account_info(account_info_iter)?;
-            let expected_address = Pubkey::create_program_address(&[&ether, &[nonce]], program_id)?;
-            if expected_address != *program_info.key {
-                return Err(ProgramError::InvalidArgument);
-            };
-            let empty_seeds = [];
-            let program_seeds = [&ether[..], &[nonce]];
-            invoke_signed(
-                &create_account(funding_info.key, program_info.key, lamports, space, program_id),
-                &accounts, &[&empty_seeds[..], &program_seeds[..]]
-            )?;
-            Ok(())
-        },
-        _ => {Err(ProgramError::InvalidInstructionData)}
-    }*/
-    Err(ProgramError::InvalidInstructionData)
+fn print_data(src: &[u8]) {    
+    info!(&("data: ".to_owned() + &hex::encode(&src)));      
 }
 
-fn do_write(program_info: &AccountInfo, offset: u32, bytes: &[u8]) -> ProgramResult {
-    let mut data = program_info.data.borrow_mut();
-    let offset = offset as usize;
-    if data.len() < offset+AccountData::SIZE + bytes.len() {
-        info!("Account data too small");
-        return Err(ProgramError::AccountDataTooSmall);
-    }
-    data[offset+AccountData::SIZE..offset+AccountData::SIZE + bytes.len()].copy_from_slice(&bytes);
-    Ok(())
+fn to_hex_string(bytes:& Vec<u8>) -> String {
+    let strs: Vec<String> = bytes.iter().map(|b| format!("{:02X}", b)).collect();
+    strs.connect("")
 }
 
-fn do_finalize<'a>(program_id: &Pubkey, accounts: &'a [AccountInfo<'a>]) -> ProgramResult {
-    info!("do_finalize");
-    let account_info_iter = &mut accounts.iter();
-    let program_info = next_account_info(account_info_iter)?;
-    let caller_info = next_account_info(account_info_iter)?;
-    let signer_info = next_account_info(account_info_iter)?;
-    let clock_info = next_account_info(account_info_iter)?;
-    let rent_info = next_account_info(account_info_iter)?;
+// entrypoint!(process_instruction);
+// fn process_instruction(
+//     _program_id: &Pubkey,
+//     accounts: &[AccountInfo],
+//     instruction_data: &[u8],
+// ) -> ProgramResult {
+//     if instruction_data.is_empty() {
+//         return Err(ProgramError::InvalidAccountData);
+//     }
 
-    if program_info.owner != program_id {
-        return Err(ProgramError::InvalidArgument);
-    }
+//     let secp_instruction_index = instruction_data[0];
+//     let account_info_iter = &mut accounts.iter();
+//     let instruction_accounts = next_account_info(account_info_iter)?;
+//     assert_eq!(*instruction_accounts.key, instructions::id());
+//     let data_len = instruction_accounts.try_borrow_data()?.len();
+//     if data_len < 2 {
+//         return Err(ProgramError::InvalidAccountData);
+//     }
 
-    let mut backend = SolanaBackend::new(program_id, accounts, clock_info)?;
-    info!("  backend initialized");
+//     let instruction = instructions::load_instruction_at(
+//         secp_instruction_index as usize,
+//         &instruction_accounts.try_borrow_data()?,
+//     )
+//     .map_err(|_| ProgramError::InvalidAccountData)?;
 
-    let config = evm::Config::istanbul();
-    let mut executor = StackExecutor::new(&backend, usize::max_value(), &config);
-    info!("  executor initialized");
+//     let current_instruction =
+//         instructions::load_current_index(&instruction_accounts.try_borrow_data()?);
+//     let my_index = instruction_data[1] as u16;
+//     assert_eq!(current_instruction, my_index);
 
-    let caller = backend.get_account_by_index(1).ok_or(ProgramError::InvalidArgument)?;
-
-    info!("Execute transact_create");
-
-    let code_data = {
-        let data = program_info.data.borrow();
-        let (_unused, rest) = data.split_at(AccountData::SIZE);
-        let (code_len, rest) = rest.split_at(8);
-        let code_len = code_len.try_into().ok().map(u64::from_le_bytes).unwrap();
-        let (code, _rest) = rest.split_at(code_len as usize);
-        code.to_vec()
-    };
-
-    let program_account = SolidityAccount::new(program_info)?;
-
-    let exit_reason = executor.transact_create2(
-            caller.get_ether(),
-            U256::zero(),
-            code_data,
-            H256::default(), usize::max_value()
-        );
-    info!("  create2 done");
-
-    if exit_reason.is_succeed() {
-        info!("Succeed execution");
-        let (applies, logs) = executor.deconstruct();
-        backend.apply(applies, logs, false)?;
-        Ok(())
-    } else {
-        info!("Not succeed execution");
-        Err(ProgramError::InvalidInstructionData)
-    }
-}
-
-fn do_call<'a>(
-        program_id: &Pubkey,
-        accounts: &'a [AccountInfo<'a>],
-        instruction_data: &[u8],
-    ) -> ProgramResult
-{
-    info!("do_call");
-    let account_info_iter = &mut accounts.iter();
-    let program_info = next_account_info(account_info_iter)?;
-    let caller_info = next_account_info(account_info_iter)?;
-    let signer_info = next_account_info(account_info_iter)?;
-    let clock_info = next_account_info(account_info_iter)?;
-
-    let mut backend = SolanaBackend::new(program_id, accounts, accounts.last().unwrap())?;
-    let config = evm::Config::istanbul();
-    let mut executor = StackExecutor::new(&backend, usize::max_value(), &config);
-    info!("Executor initialized");
-    let contract = backend.get_account_by_index(0).ok_or(ProgramError::InvalidArgument)?;
-    let caller = backend.get_account_by_index(1).ok_or(ProgramError::InvalidArgument)?;
-    info!(&("   caller: ".to_owned() + &caller.get_ether().to_string()));
-    info!(&(" contract: ".to_owned() + &contract.get_ether().to_string()));
-
-    let (exit_reason, result) = executor.transact_call(
-            caller.get_ether(),
-            contract.get_ether(),
-            U256::zero(),
-            instruction_data.to_vec(),
-            usize::max_value()
-        );
-
-    info!("Call done");
-    info!(match exit_reason {
-        ExitReason::Succeed(_) => {
-            let (applies, logs) = executor.deconstruct();
-            backend.apply(applies, logs, false)?;
-            info!("Applies done");
-            "succeed"
-        },
-        ExitReason::Error(_) => "error",
-        ExitReason::Revert(_) => "revert",
-        ExitReason::Fatal(_) => "fatal",
-    });
-    info!(&hex::encode(&result));
-    
-    if !exit_reason.is_succeed() {
-        info!("Not succeed execution");
-        return Err(ProgramError::InvalidInstructionData);
-    }
-    Ok(())
-}
-
-
-
-// Pull in syscall stubs when building for non-BPF targets
-//#[cfg(not(target_arch = "bpf"))]
-//solana_sdk::program_stubs!();
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use solana_sdk::{program_error::ProgramError, pubkey::Pubkey};
-
-    #[test]
-    fn test_write() {
-        let program_id = Pubkey::new(&[0; 32]);
-
-        let string = b"letters and such";
-        assert_eq!(Ok(()), process_instruction(&program_id, &[], string));
-
-        let emoji = "🐆".as_bytes();
-        let bytes = [0xF0, 0x9F, 0x90, 0x86];
-        assert_eq!(emoji, bytes);
-        assert_eq!(Ok(()), process_instruction(&program_id, &[], &emoji));
-
-        let mut bad_utf8 = bytes;
-        bad_utf8[3] = 0xFF; // Invalid UTF-8 byte
-        assert_eq!(
-            Err(ProgramError::InvalidInstructionData),
-            process_instruction(&program_id, &[], &bad_utf8)
-        );
-    }
-}
-
+//     msg!(&format!("id: {}", instruction.program_id));
+//     msg!(&format!("data[0]: {}", instruction.data[0]));
+//     msg!(&format!("index: {}", current_instruction));
+//     Ok(())
+// }
