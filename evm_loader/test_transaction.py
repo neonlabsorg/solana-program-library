@@ -333,7 +333,7 @@ class EvmLoaderTestsNewAccount(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.acc = RandomAccaunt()
-        # cls.acc = RandomAccaunt('1613073922.json')
+        # cls.acc = RandomAccaunt('1613134499.json')
         if getBalance(cls.acc.get_acc().public_key()) == 0:
             print("request_airdrop for ", cls.acc.get_acc().public_key())
             cli = SolanaCli(solana_url, cls.acc)
@@ -344,7 +344,7 @@ class EvmLoaderTestsNewAccount(unittest.TestCase):
             print("Done\n")
             
         cls.loader = EvmLoader(solana_url, cls.acc)
-        # cls.loader = EvmLoader(solana_url, cls.acc, '3ZxexPKTYhrjdBvxUBhTnH842iJLJ2t9qDUGQbNUeMvM')
+        # cls.loader = EvmLoader(solana_url, cls.acc, '6PRV6yPEENb7BQjEpVH4Yv8jAzNHMqHwtJ63PPPiWLjt')
         cls.evm_loader = cls.loader.loader_id
         print("evm loader id: ", cls.evm_loader)
         # cls.owner_contract = cls.loader.deploy('evm_loader/hello_world.bin')
@@ -372,47 +372,41 @@ class EvmLoaderTestsNewAccount(unittest.TestCase):
     #     print(result)
 
     def test_check_tx(self):    
-        trx = "0xf86c258520d441420082520894d8587a2fd6c30dd5c70f0630f1a635e4ae6ae47188043b93e2507e80008025a00675d0de7873f2c77a1c7ab0806cbda67ea6c25303ca7a80c211af97ea202d6aa022eb61dbc3097d7a8a4b142fd7f3c03bd8320ad02d564d368078a0a5fe227199"
-        # trx = '0xf87202853946be1c0082520894c1566af4699928fdf9be097ca3dc47ece39f8f8e880de0b6b3a7640000808602e92be91e85a06f350382938df92b987681de78d81f0490ee1d26b18ea968ae42ee4a800711a6a0641672e91b735bd6badd2c51b6a6ecdcd740b78c8bf581aa3f1431cd0f8c02f3'
+        trx_data = "0xf86c258520d441420082520894d8587a2fd6c30dd5c70f0630f1a635e4ae6ae47188043b93e2507e80008025a00675d0de7873f2c77a1c7ab0806cbda67ea6c25303ca7a80c211af97ea202d6aa022eb61dbc3097d7a8a4b142fd7f3c03bd8320ad02d564d368078a0a5fe227199"
         
-        _trx = Trx.fromString(bytearray.fromhex(trx[2:]))
+        _trx = Trx.fromString(bytearray.fromhex(trx_data[2:]))
         
         raw_msg = _trx.get_msg()
         msgHash = _trx.hash()
         sig = keys.Signature(vrs=[1 if _trx.v%2==0 else 0, _trx.r, _trx.s])
         pub = sig.recover_public_key_from_msg_hash(msgHash)
-                
-        data = bytearray.fromhex("a2")
-        data += struct.pack("<I", len(raw_msg))
-        data += raw_msg
-        data += sig.to_bytes()
-        data += pub.to_canonical_address()
 
-        data1 = bytearray.fromhex("a2")
-        data1 += struct.pack("<I", len(msgHash))
-        data1 += msgHash
-        data1 += sig.to_bytes()
-        data1 += pub.to_canonical_address()
-               
+        check_count = 1
+        data_start = 1 + 11
+        eth_address_size = 20
+        signature_size = 65
+        eth_address_offset = data_start
+        signature_offset = eth_address_offset + eth_address_size
+        message_data_offset = signature_offset + signature_size
+
+        data = struct.pack("B", check_count)
+        data += struct.pack("<H", signature_offset)
+        data += struct.pack("B", 0)
+        data += struct.pack("<H", eth_address_offset)
+        data += struct.pack("B", 0)
+        data += struct.pack("<H", message_data_offset)
+        data += struct.pack("<H", len(raw_msg))
+        data += struct.pack("B", 0)
+        data += pub.to_canonical_address()
+        data += sig.to_bytes()
+        data += raw_msg                      
+
         trx = Transaction().add(
-            TransactionInstruction(program_id=self.evm_loader, data=data, keys=[
-                AccountMeta(pubkey=self.acc.get_acc().public_key(), is_signer=True, is_writable=True),
-                AccountMeta(pubkey=PublicKey("KeccakSecp256k11111111111111111111111111111"), is_signer=False, is_writable=False),   
-                AccountMeta(pubkey=PublicKey("Sysvar1nstructions1111111111111111111111111"), is_signer=False, is_writable=False),                
+            TransactionInstruction(program_id="KeccakSecp256k11111111111111111111111111111", data=data, keys=[   
+                AccountMeta(pubkey=PublicKey("KeccakSecp256k11111111111111111111111111111"), is_signer=False, is_writable=False),                 
             ])).add(
-            TransactionInstruction(program_id=self.evm_loader, data=data1, keys=[
+            TransactionInstruction(program_id=self.evm_loader, data=(bytearray.fromhex("a1") + bytearray.fromhex(trx_data[2:])), keys=[
                 AccountMeta(pubkey=self.acc.get_acc().public_key(), is_signer=True, is_writable=True),
-                AccountMeta(pubkey=PublicKey("KeccakSecp256k11111111111111111111111111111"), is_signer=False, is_writable=False),   
-                AccountMeta(pubkey=PublicKey("Sysvar1nstructions1111111111111111111111111"), is_signer=False, is_writable=False),                
-            ])).add(
-            TransactionInstruction(program_id=self.evm_loader, data=data, keys=[
-                AccountMeta(pubkey=self.acc.get_acc().public_key(), is_signer=True, is_writable=True),
-                AccountMeta(pubkey=PublicKey("KeccakSecp256k11111111111111111111111111111"), is_signer=False, is_writable=False),   
-                AccountMeta(pubkey=PublicKey("Sysvar1nstructions1111111111111111111111111"), is_signer=False, is_writable=False),                
-            ])).add(
-            TransactionInstruction(program_id=self.evm_loader, data=data1, keys=[
-                AccountMeta(pubkey=self.acc.get_acc().public_key(), is_signer=True, is_writable=True),
-                AccountMeta(pubkey=PublicKey("KeccakSecp256k11111111111111111111111111111"), is_signer=False, is_writable=False),   
                 AccountMeta(pubkey=PublicKey("Sysvar1nstructions1111111111111111111111111"), is_signer=False, is_writable=False),                
             ]))
         result = http_client.send_transaction(trx, self.acc.get_acc())

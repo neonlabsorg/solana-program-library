@@ -90,12 +90,6 @@ pub enum EvmInstruction<'a> {
         raw_tx: &'a [u8],
     },
 
-    CheckEtheriumTXCallProgram {
-        /// Call data
-        message: &'a [u8], 
-        sign: &'a [u8], 
-        eth_addr: &'a [u8],
-    },
 }
 
 
@@ -157,15 +151,6 @@ impl<'a> EvmInstruction<'a> {
             },
             0xa1 => {
                 EvmInstruction::CheckEtheriumTX {raw_tx: rest}
-            },
-            0xa2 => {
-                let (msg_len, rest) = rest.split_at(4);
-                let msg_len = msg_len.try_into().ok().map(u32::from_le_bytes).ok_or(InvalidInstructionData)?;
-                let (message, rest) = rest.split_at(msg_len.try_into().unwrap());
-                let (sign, rest) = rest.split_at(65);                
-                let (eth_addr, rest) = rest.split_at(20);
-
-                EvmInstruction::CheckEtheriumTXCallProgram {message, sign, eth_addr}
             },
             _ => return Err(InvalidInstructionData),
         })

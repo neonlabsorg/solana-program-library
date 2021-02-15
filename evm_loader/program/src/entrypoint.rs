@@ -31,7 +31,7 @@ use crate::{
     instruction::EvmInstruction,
     // account_data::AccountData,
     // solidity_account::SolidityAccount,
-    transaction::{check_tx, make_secp256k1_instruction},
+    transaction::{check_tx, get_check_fields},
 };
 
 use evm::{
@@ -120,9 +120,6 @@ fn process_instruction<'a>(
     accounts: &'a [AccountInfo<'a>],
     instruction_data: &[u8],
 ) -> ProgramResult {
-
-    let account_info_iter = &mut accounts.iter();
-
     let instruction = EvmInstruction::unpack(instruction_data)?;
     info!("Instruction parsed");
 
@@ -143,35 +140,34 @@ fn process_instruction<'a>(
             Ok(())
         },
         EvmInstruction::CheckEtheriumTX {raw_tx} => {
-            check_tx(raw_tx)
-        },
-        EvmInstruction::CheckEtheriumTXCallProgram {message, sign, eth_addr} => {
+            check_tx(raw_tx);
+            
             let account_info_iter = &mut accounts.iter();
             let program_account = next_account_info(account_info_iter)?;
-            let secp256_account = next_account_info(account_info_iter)?;
-            let sysvara_account = next_account_info(account_info_iter)?;  
-            
-            print_data(&sysvara_account.try_borrow_data()?);
-                    
-            info!(&( "message: ".to_owned() + &hex::encode(&message)));
-            info!(&("    sign: ".to_owned() + &hex::encode(&sign)));
-            info!(&("eth_addr: ".to_owned() + &hex::encode(&eth_addr)));
-         
-            let secp_instruction = make_secp256k1_instruction(message, sign, eth_addr);
-            invoke(&secp_instruction, accounts)?;
+            let sysvar_account = next_account_info(account_info_iter)?;  
 
-            info!("call done");
+            let current_instruction = instructions::load_current_index(&sysvar_account.try_borrow_data()?);
+            info!(&(" curr: ".to_owned() + &current_instruction.to_string())); 
 
-            for index in vec![0, 1, 2, 3, 4, 5] {
-                info!(&("index: ".to_owned() + &index.to_string()));  
-
-                match load_instruction_at(index, &sysvara_account.try_borrow_data()?) {
+            let mut flag = true;
+            let mut index = 0;
+            while flag == true {
+                info!(&("index: ".to_owned() + &index.to_string())); 
+                
+                match load_instruction_at(index, &sysvar_account.try_borrow_data()?) {
                     Ok(instr) => {
                         info!(&format!("ID: {}", instr.program_id));
-                        info!(&("INSTRUCTION: ".to_owned() + &hex::encode(&instr.data)));            
+                        if instr.program_id == secp256k1_program::id() {
+                            info!(&("INSTRUCTION: ".to_owned() + &hex::encode(&instr.data)));
+                            get_check_fields(&instr.data);
+                        }
+
+                        index += 1;         
                     },
                     Err(err) => {
                         info!("ERR");
+                        
+                        flag = false;
                     }
                 }                
             }
@@ -179,29 +175,6 @@ fn process_instruction<'a>(
             Ok(())
         },
     };
-
-/*    let result = if program_lamports == 0 {
-        do_create_account(program_id, accounts, instruction_data)
-    } else {
-        let account_type = {program_info.data.borrow()[0]};
-        if account_type == 0 {
-            let instruction: LoaderInstruction = limited_deserialize(instruction_data)
-                .map_err(|_| ProgramError::InvalidInstructionData)?;
-
-            match instruction {
-                LoaderInstruction::Write {offset, bytes} => {
-                    do_write(program_info, offset, &bytes)
-                },
-                LoaderInstruction::Finalize => {
-                    info!("FinalizeInstruction");
-                    do_finalize(program_id, accounts, program_info)
-                },
-            }
-        } else {
-            info!("Execute");
-            do_execute(program_id, accounts, instruction_data)
-        }
-    };*/
 
     info!(&("Total memory occupied: ".to_owned() + &BumpAllocator::occupied().to_string()));
     result
