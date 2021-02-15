@@ -6,7 +6,7 @@ use core::convert::Infallible;
 use primitive_types::{H160, H256, U256};
 use sha3::{Digest, Keccak256};
 use solana_sdk::{
-    account_info::AccountInfo,
+    account_info::{next_account_info, AccountInfo},
     pubkey::Pubkey,
     program_error::ProgramError,
     sysvar::{clock::Clock, Sysvar},
@@ -123,17 +123,22 @@ impl<'a> SolanaBackend<'a> {
         H160::from_slice(&[0xffu8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])
     }
 
-    pub fn apply<A, I, L>(&mut self, values: A, logs: L, delete_empty: bool) -> Result<(), ProgramError>
+    pub fn apply<A, I, L>(&mut self, values: A, logs: L, delete_empty: bool, skip_addr: Option<(H160, bool)>) -> Result<(), ProgramError>
             where
                 A: IntoIterator<Item=Apply<I>>,
                 I: IntoIterator<Item=(H256, H256)>,
                 L: IntoIterator<Item=Log>,
-    {
-        let system_account = Self::system_account();
+    {        
+        let ether_addr = skip_addr.unwrap_or_else(|| (H160::zero(), true));
+        let system_account = Self::system_account();        
+
         for apply in values {
             match apply {
-                Apply::Modify {address, basic, code, storage, reset_storage} => {
+                Apply::Modify {address, basic, code, storage, reset_storage} => {   
                     if address == system_account {
+                        continue;
+                    }
+                    if ether_addr.1 != true && address == ether_addr.0 {
                         continue;
                     }
                     let account = self.get_account_mut(address).ok_or_else(|| ProgramError::NotEnoughAccountKeys)?;
@@ -266,17 +271,19 @@ impl<'a> Backend for SolanaBackend<'a> {
         
                 let (_, input) = input.split_at(35 * acc_length as usize);
                 info!(&hex::encode(&input));
-                
-                let caller = self.get_account_by_index(1).unwrap();   // do_call already check existence of Ethereum account with such index
-                let program_seeds = [caller.account_data.ether.as_bytes(), &[caller.account_data.nonce]];
+
+                let contract = self.get_account_by_index(0).unwrap();   // do_call already check existence of Ethereum account with such index
+                let sender = self.get_account_by_index(1).unwrap();   // do_call already check existence of Ethereum account with such index
+                let sender_seeds = [sender.account_data.ether.as_bytes(), &[sender.account_data.nonce]];
+                let contract_seeds = [contract.account_data.ether.as_bytes(), &[contract.account_data.nonce]];
                 //let empty_seeds = [];
                 info!("account_infos");
                 for info in self.account_infos {
                     info!(&format!("  {}", info.key));
                 };
                 let result = invoke_signed(
-                    &Instruction{program_id, accounts: accounts, data: input.to_vec()}, 
-                    &self.account_infos, &[&program_seeds[..]]
+                        &Instruction{program_id, accounts: accounts, data: input.to_vec()},
+                    &self.account_infos, &[&sender_seeds[..], &contract_seeds[..]]
                 );
         
                 if let Err(err) = result {

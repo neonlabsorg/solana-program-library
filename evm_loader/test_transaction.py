@@ -405,7 +405,7 @@ class EvmLoaderTestsNewAccount(unittest.TestCase):
             TransactionInstruction(program_id="KeccakSecp256k11111111111111111111111111111", data=data, keys=[   
                 AccountMeta(pubkey=PublicKey("KeccakSecp256k11111111111111111111111111111"), is_signer=False, is_writable=False),                 
             ])).add(
-            TransactionInstruction(program_id=self.evm_loader, data=(bytearray.fromhex("a1") + bytearray.fromhex(trx_data[2:])), keys=[
+            TransactionInstruction(program_id=self.evm_loader, data=(bytearray.fromhex("a2") + bytearray.fromhex(trx_data[2:])), keys=[
                 AccountMeta(pubkey=self.acc.get_acc().public_key(), is_signer=True, is_writable=True),
                 AccountMeta(pubkey=PublicKey("Sysvar1nstructions1111111111111111111111111"), is_signer=False, is_writable=False),                
             ]))

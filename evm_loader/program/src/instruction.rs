@@ -90,6 +90,11 @@ pub enum EvmInstruction<'a> {
         raw_tx: &'a [u8],
     },
 
+    CallFromRawEthereumTX {
+        /// Call data
+        raw_tx: &'a [u8],
+    },
+
 }
 
 
@@ -151,6 +156,9 @@ impl<'a> EvmInstruction<'a> {
             },
             0xa1 => {
                 EvmInstruction::CheckEtheriumTX {raw_tx: rest}
+            },
+            0xa2 => {
+                EvmInstruction::CallFromRawEthereumTX {raw_tx: rest}
             },
             _ => return Err(InvalidInstructionData),
         })
