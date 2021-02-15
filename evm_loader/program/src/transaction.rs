@@ -61,6 +61,13 @@ pub fn check_tx(raw_tx: &[u8]) {
     info!(&("       sign: ".to_owned() + &hex::encode(&compact_bytes))); 
 }
 
+pub fn get_data(raw_tx: &[u8]) -> std::vec::Vec<u8> {    
+    let eth_tx: Result<SignedTransaction, _> = rlp::decode(&raw_tx);
+    let tx = eth_tx.unwrap();
+
+    tx.data.0
+}
+
 /// Hex-serialized shim for `Vec<u8>`.
 #[derive(Serialize, Deserialize, Debug, Hash, PartialOrd, Ord, PartialEq, Eq, Clone, Default)]
 pub struct Bytes(#[serde(with = "bytes")] pub Vec<u8>);
