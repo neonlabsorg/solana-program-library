@@ -219,7 +219,46 @@ def make_keccak_instruction_data(check_instruction_index, msg_len):
     data += struct.pack("B", check_instruction_index)
 
     return data
+
+def make_random_private_key():
+    hex_letters = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f']
+    import random        
+    return ''.join(random.choice(hex_letters) for i in range(64))
+
+
+def make_random_request(contract, method):
+    tx_1 = {
+        'to': contract,
+        'value': 0,
+        'gas': 0,
+        'gasPrice': 0,
+        'nonce': 0,
+        'data': method,
+        'chainId': 1
+    }
     
+    new_key = make_random_private_key()        
+    (from_addr, sign, msg) =  make_instruction_data_from_tx(tx_1, new_key)
+    keccak_instruction = make_keccak_instruction_data(1, len(msg))
+
+    return (keccak_instruction, from_addr + sign + msg, from_addr, new_key)
+
+def make_request_w_params(contract, method, nonce, private):
+    tx_1 = {
+        'to': contract,
+        'value': 0,
+        'gas': 0,
+        'gasPrice': 0,
+        'nonce': nonce,
+        'data': method,
+        'chainId': 1
+    }
+    
+    (from_addr, sign, msg) =  make_instruction_data_from_tx(tx_1, private)
+    keccak_instruction = make_keccak_instruction_data(1, len(msg))
+
+    return (keccak_instruction, from_addr + sign + msg, from_addr)
+
 # tx_1 = {
 #     'to': '0x2ccb0f131443b797b46dd9690a7dec9e6eeee309',
 #     'value': 1,

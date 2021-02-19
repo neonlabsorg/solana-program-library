@@ -29,10 +29,9 @@ def confirm_transaction(client, tx_sig):
 #            print('Confirmed transaction:', resp)
             break
         elapsed_time += sleep_time
-        if not resp["result"]:
-            raise RuntimeError("could not confirm transaction: ", tx_sig)
+    if not resp["result"]:
+        raise RuntimeError("could not confirm transaction: ", tx_sig)
     return resp
-
 
 
 class SolanaCli:
@@ -159,3 +158,15 @@ def getBalance(account):
 def solana2ether(public_key):
     from web3 import Web3
     return bytes(Web3.keccak(bytes(PublicKey(public_key)))[-20:])
+
+def create_ether_accaut(loader, eth_addr):
+    (caller, caller_nonce) = loader.ether2program(eth_addr)
+
+    if getBalance(caller) == 0:
+        print("Create caller account...")
+        print(" ether: " + eth_addr.hex())
+        print("solana: " + caller)
+        loader.createEtherAccount(eth_addr)
+        print("Done\n")
+    
+    return caller
