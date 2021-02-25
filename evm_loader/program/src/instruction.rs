@@ -99,6 +99,14 @@ pub enum EvmInstruction<'a> {
         unsigned_msg: &'a [u8],
     },
 
+    CompareSpeed {
+        bytes: &'a [u8],
+    },
+
+    CompareSpeedOpt {
+        bytes: &'a [u8],
+    },
+
 }
 
 
@@ -167,6 +175,12 @@ impl<'a> EvmInstruction<'a> {
                 let (from_addr, rest) = rest.split_at(20);
                 let (sign, unsigned_msg) = rest.split_at(65);
                 EvmInstruction::CheckEtheriumTX {from_addr, sign, unsigned_msg}
+            },
+            0xb1 => {                
+                EvmInstruction::CompareSpeed {bytes: rest}
+            },
+            0xb2 => {
+                EvmInstruction::CompareSpeedOpt {bytes: rest}
             },
             _ => return Err(InvalidInstructionData),
         })

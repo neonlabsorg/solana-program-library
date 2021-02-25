@@ -29,8 +29,8 @@ def confirm_transaction(client, tx_sig):
 #            print('Confirmed transaction:', resp)
             break
         elapsed_time += sleep_time
-        if not resp["result"]:
-            raise RuntimeError("could not confirm transaction: ", tx_sig)
+    if not resp["result"]:
+        raise RuntimeError("could not confirm transaction: ", tx_sig)
     return resp
 
 

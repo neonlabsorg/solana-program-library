@@ -32,6 +32,7 @@ use crate::{
     account_data::AccountData,
     solidity_account::SolidityAccount,
     transaction::{check_tx, get_check_fields, get_data, make_secp256k1_instruction},
+    optimized_transaction::get_data_opt,
 };
 
 use evm::{
@@ -282,6 +283,14 @@ fn process_instruction<'a>(
             }    
 
             do_call(program_id, accounts, &data, Some( (caller, nonce) ))
+        },
+        EvmInstruction::CompareSpeed {bytes} => {
+            let (nonce, contract, data) = get_data(bytes);
+            Ok(())
+        },
+        EvmInstruction::CompareSpeedOpt {bytes} => {
+            let (nonce, contract, data) = get_data_opt(bytes).unwrap();
+            Ok(())
         },
     };
 
