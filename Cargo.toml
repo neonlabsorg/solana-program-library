@@ -4,8 +4,6 @@ members = [
   "utils/test-client",
   "memo/program",
   "shared-memory/program",
-  "themis/program_bn",
-  "themis/program_ristretto",
   "token-lending/program",
   "token-swap/program",
   "token/cli",
@@ -18,6 +16,8 @@ exclude = [
   "shared-memory/client",
   "themis/client_bn",
   "themis/client_ristretto",
+  "themis/program_bn",
+  "themis/program_ristretto",
   "token/perf-monitor",
 ]
 
