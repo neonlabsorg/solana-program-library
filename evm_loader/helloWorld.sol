@@ -1,9 +1,9 @@
 pragma solidity ^0.5.12;
 
 contract helloWorld {
-    string public text = "Hello World!";
+    string constant text = "Hello World!";
 
-    function callHelloWorld() public view returns (string memory) {
+    function callHelloWorld() public pure returns (string memory) {
         return text;
     }
 }
