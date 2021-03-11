@@ -12,6 +12,13 @@ COPY ./token/program /opt/token/program/
 WORKDIR /opt/token/cli
 RUN cargo build --release
 
+# Build ethereum tx emulator utility
+FROM builder AS emulator-builder
+COPY ./evm_loader/emulator/ /opt/emulator/emulator/
+COPY ./evm_loader/rust-evm/ /opt/emulator/rust-evm/
+WORKDIR /opt/emulator/emulator
+RUN cargo build --release
+
 # Build spl-memo
 # Note: create stub Cargo.toml to speedup build
 FROM builder AS spl-memo-builder
@@ -69,6 +76,7 @@ COPY --from=solana-deploy /opt/solana/bin/solana /opt/solana/bin/solana-deploy
 COPY --from=spl-memo-builder /opt/target/bpfel-unknown-unknown/release/spl_memo.so /opt/
 COPY --from=evm-loader-builder /opt/target/bpfel-unknown-unknown/release/evm_loader.so /opt/
 COPY --from=token-cli-builder /opt/token/cli/target/release/spl-token /opt/solana/bin/
+COPY --from=emulator-builder /opt/emulator/emulator/target/release/emulator /opt/solana/bin/
 COPY --from=contracts /opt/ /opt/solidity/
 COPY evm_loader/*.py evm_loader/deploy-test.sh /opt/
 
