@@ -13,6 +13,7 @@ members = [
   "evm_loader/program",
 ]
 exclude = [
+  "evm_loader/emulator",
   "shared-memory/client",
   "themis/client_bn",
   "themis/client_ristretto",
