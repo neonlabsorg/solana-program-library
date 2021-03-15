@@ -43,6 +43,7 @@ struct AccountJSON {
 pub struct SolanaBackend {
     accounts: RefCell<HashMap<H160, SolidityAccount>>,
     new_accounts: RefCell<HashSet<H160>>,
+    solana_accounts: RefCell<HashSet<H160>>,
     rpc_client: RpcClient,
     program_id: Pubkey,
     contract_id: H160,
@@ -54,8 +55,9 @@ impl SolanaBackend {
         eprintln!("backend::new");
         Ok(Self {
             accounts: RefCell::new(HashMap::new()),
-            rpc_client: RpcClient::new(solana_url),
             new_accounts: RefCell::new(HashSet::new()),
+            solana_accounts: RefCell::new(HashSet::new()),
+            rpc_client: RpcClient::new(solana_url),
             program_id: program_id,
             contract_id: contract_id,
             caller_id: caller_id,
@@ -65,6 +67,7 @@ impl SolanaBackend {
     fn create_acc_if_not_exists(&self, address: H160) -> bool {
         let mut accounts = self.accounts.borrow_mut(); 
         let mut new_accounts = self.new_accounts.borrow_mut(); 
+        let mut solana_accounts = self.solana_accounts.borrow_mut(); 
         if accounts.get(&address).is_none() {
             eprintln!("Not found account for {}", &address.to_string());
 
@@ -76,16 +79,26 @@ impl SolanaBackend {
                     eprintln!("Account data len {}", acc.data.len());
                     eprintln!("Account owner {}", acc.owner.to_string());
                    
-                    accounts.insert(address, SolidityAccount::new(acc.data, acc.lamports).unwrap());
+                    if acc.owner == self.program_id {
+                        accounts.insert(address, SolidityAccount::new(acc.data, acc.lamports).unwrap());
+    
+                        true
+                    } else {
+                        eprintln!("Account created not by evm_loader {}", &address.to_string());
+    
+                        solana_accounts.insert(address);
+    
+                        false
+                    }
 
-                    true
                 },
                 Err(_) => {
                     eprintln!("Account not found {}", &address.to_string());
 
+                    accounts.insert(address, SolidityAccount::new(vec!(), 0).unwrap());
                     new_accounts.insert(address);
 
-                    false
+                    true
                 }
             }
         } else {
@@ -128,15 +141,17 @@ impl SolanaBackend {
         
         eprint!("[");
         let accounts = self.accounts.borrow();
-        for (address, acc) in accounts.iter() {
-            arr.push(AccountJSON{address: "0x".to_string() + &hex::encode(&address.to_fixed_bytes()), writable: acc.updated, new: false});
-            eprint!("{{\"address\":\"0x{}\",\"write\":\"{}\"}},", &hex::encode(&address.to_fixed_bytes()), &acc.updated.to_string());
-        }
         let new_accounts = self.new_accounts.borrow(); 
-        for address in new_accounts.iter() {
-            arr.push(AccountJSON{address: "0x".to_string() + &hex::encode(&address.to_fixed_bytes()), writable: false, new: true});
-            eprint!("{{\"address\":\"0x{}\",\"new\":\"true\"}},", &hex::encode(&address.to_fixed_bytes()));
-        }    
+        for (address, acc) in accounts.iter() {
+            let new_one = new_accounts.get(address).is_some();
+            arr.push(AccountJSON{address: "0x".to_string() + &hex::encode(&address.to_fixed_bytes()), writable: acc.updated, new: new_one});
+            eprint!("{{\"address\":\"0x{}\",\"write\":\"{}\",\"new\":\"{}\"}},", &hex::encode(&address.to_fixed_bytes()), &acc.updated.to_string(), new_one);
+        }
+        let solana_accounts = self.solana_accounts.borrow(); 
+        for address in solana_accounts.iter() {
+            arr.push(AccountJSON{address: "0x".to_string() + &hex::encode(&address.to_fixed_bytes()), writable: false, new: false});
+            eprint!("{{\"address\":\"0x{}\",\"new\":\"false\"}},", &hex::encode(&address.to_fixed_bytes()));
+        }   
         eprintln!("]");
 
         let js = json!({"accounts": arr, "result": &hex::encode(&result), "exit_status": &status}).to_string();

@@ -35,6 +35,7 @@ fn main() {
         eprintln!("{} SOLANA_URL EVM_LOADER CONTRACT_ID CALLER_ID DATA", &args[0].to_string());
         eprintln!("or for local cluster");
         eprintln!("{} EVM_LOADER CONTRACT_ID CALLER_ID DATA", &args[0].to_string());
+        
         return;
     };
 
