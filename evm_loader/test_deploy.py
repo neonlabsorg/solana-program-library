@@ -110,10 +110,8 @@ class DeployTest(unittest.TestCase):
         print("contract_sol", contract_sol, contract_nonce)
 
         # Read content of solidity contract
-        with open(CONTRACTS_DIR+"UniswapV2Factory.binary", "br") as f:
+        with open(CONTRACTS_DIR+"ERC20Wrapper.binary", "br") as f:
             content = f.read()
-
-        content += bytes(16)+self.caller_ether
 
         # Build deploy transaction
         tx = {
