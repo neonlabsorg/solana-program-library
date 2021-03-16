@@ -210,6 +210,15 @@ class EvmLoader:
         print('ether2program: {} {} => {}'.format(ether, 255, acc))
         return (acc, 255)
 
+    def ether2programAddress(self, ether):
+        if isinstance(ether, str):
+            if ether.startswith('0x'): ether = ether[2:]
+        else: ether = ether.hex()
+        cli = SolanaCli(self.solana_url, self.acc)
+        output = cli.call("create-program-address {} {}".format(ether, self.loader_id))
+        items = output.rstrip().split('  ')
+        return (items[0], int(items[1]))
+
     def checkAccount(self, solana):
         info = http_client.get_account_info(solana)
         print("checkAccount({}): {}".format(solana, info))
@@ -221,7 +230,7 @@ class EvmLoader:
         with open(location, mode='rb') as file:
             fileHash = Web3.keccak(file.read())
             ether = bytes(Web3.keccak(b'\xff' + creator + bytes(32) + fileHash)[-20:])
-        program = self.ether2program(ether)
+        program = self.ether2programAddress(ether)
         info = http_client.get_account_info(program[0])
         if info['result']['value'] is None:
             res = self.deploy(location)
