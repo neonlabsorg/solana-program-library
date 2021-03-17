@@ -1,6 +1,3 @@
-
-# Note: This crate must be built using do.sh
-
 [package]
 name = "spl-token-lending"
 version = "0.1.0"
@@ -12,19 +9,29 @@ edition = "2018"
 
 [features]
 no-entrypoint = []
-program = ["solana-sdk/program"]
-default = ["solana-sdk/default"]
+test-bpf = []
+test-dump-genesis-accounts = []
 
 [dependencies]
 arrayref = "0.3.6"
-num_enum = "0.5.1"
 num-derive = "0.3"
 num-traits = "0.2"
-solana-sdk = { version = "1.3.14", default-features = false }
+serum_dex = { git = "https://github.com/project-serum/serum-dex", rev = "991a86e", features = ["no-entrypoint"] }
+solana-program = "1.5.11"
+spl-token = { path = "../../token/program", features = [ "no-entrypoint" ] }
 thiserror = "1.0"
+uint = "0.8"
 
 [dev-dependencies]
-rand = { version = "0.7.0"}
+assert_matches = "1.5.0"
+base64 = "0.13"
+log = "0.4.14"
+proptest = "0.10"
+solana-program-test = "1.5.11"
+solana-sdk = "1.5.11"
+serde = "1.0"
+serde_yaml = "0.8"
+tokio = { version = "0.3", features = ["macros"]}
 
 [lib]
 crate-type = ["cdylib", "lib"]

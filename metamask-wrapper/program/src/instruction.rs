@@ -3,7 +3,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::error::MetamaskError;
-use solana_sdk::{
+use solana_program::{
     instruction::{AccountMeta, Instruction},
     program_error::ProgramError,
     pubkey::Pubkey,

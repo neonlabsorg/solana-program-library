@@ -1,38 +1,33 @@
 [workspace]
 members = [
-  "utils/cgen",
-  "utils/test-client",
+  "associated-token-account/program",
+  "examples/rust/cross-program-invocation",
+  "examples/rust/custom-heap",
+  "examples/rust/logging",
+  "examples/rust/sysvar",
+  "examples/rust/transfer-lamports",
+  "feature-proposal/program",
+  "feature-proposal/cli",
+  "libraries/math",
   "memo/program",
+  "record/program",
   "shared-memory/program",
+  "stake-pool/cli",
+  "stake-pool/program",
   "token-lending/program",
+  "token-lending/client",
   "token-swap/program",
+  "token-swap/program/fuzz",
   "token/cli",
   "token/program",
-  "token/program-v3",
   "metamask-wrapper/program",
   "evm_loader/program",
+  "utils/cgen",
+  "utils/test-client",
 ]
 exclude = [
   "evm_loader/emulator",
-  "shared-memory/client",
-  "themis/client_bn",
   "themis/client_ristretto",
-  "themis/program_bn",
   "themis/program_ristretto",
-  "token/perf-monitor",
+  "token/perf-monitor", # TODO: Rework perf-monitor to use solana-program-test, avoiding the need to link directly with the BPF VM
 ]
-
-# Workflow for developing against local Solana crates
-#
-# 0. Uncomment the below patches
-# 1. Replace PATH_TO_SOLANA with your local filestem path to the Solana mono-repo
-# 2. Run `cargo update`
-# 3. Use `cargo` normally
-#
-[patch.crates-io]
-#solana-account-decoder = {path = "PATH_TO_SOLANA/account-decoder" }
-#solana-clap-utils = {path = "PATH_TO_SOLANA/clap-utils" }
-#solana-cli-config = {path = "PATH_TO_SOLANA/cli-config" }
-#solana-client = { path = "PATH_TO_SOLANA/client"}
-#solana-logger = {path = "PATH_TO_SOLANA/logger" }
-#solana-sdk = { path = "PATH_TO_SOLANA/sdk" }

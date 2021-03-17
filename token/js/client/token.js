@@ -2,6 +2,7 @@
  * @flow
  */
 
+import {Buffer} from 'buffer';
 import assert from 'assert';
 import BN from 'bn.js';
 import * as BufferLayout from 'buffer-layout';
@@ -21,6 +22,26 @@ import type {
 
 import * as Layout from './layout';
 import {sendAndConfirmTransaction} from './util/send-and-confirm-transaction';
+
+export const TOKEN_PROGRAM_ID: PublicKey = new PublicKey(
+  'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+);
+
+export const ASSOCIATED_TOKEN_PROGRAM_ID: PublicKey = new PublicKey(
+  'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL',
+);
+
+const FAILED_TO_FIND_ACCOUNT = 'Failed to find account';
+const INVALID_ACCOUNT_OWNER = 'Invalid account owner';
+
+/**
+ * Unfortunately, BufferLayout.encode uses an `instanceof` check for `Buffer`
+ * which fails when using `publicKey.toBuffer()` directly because the bundled `Buffer`
+ * class in `@solana/web3.js` is different from the bundled `Buffer` class in this package
+ */
+function pubkeyToBuffer(publicKey: PublicKey): typeof Buffer {
+  return Buffer.from(publicKey.toBuffer());
+}
 
 /**
  * 64-bit value
@@ -47,7 +68,7 @@ export class u64 extends BN {
    */
   static fromBuffer(buffer: typeof Buffer): u64 {
     assert(buffer.length === 8, `Invalid buffer length: ${buffer.length}`);
-    return new BN(
+    return new u64(
       [...buffer]
         .reverse()
         .map(i => `00${i.toString(16)}`.slice(-2))
@@ -125,6 +146,11 @@ export const MintLayout: typeof BufferLayout.Structure = BufferLayout.struct([
  * Information about an account
  */
 type AccountInfo = {|
+  /**
+   * The address of this account
+   */
+  address: PublicKey,
+
   /**
    * The mint associated with this account
    */
@@ -273,6 +299,11 @@ export class Token {
   programId: PublicKey;
 
   /**
+   * Program Identifier for the Associated Token program
+   */
+  associatedProgramId: PublicKey;
+
+  /**
    * Fee payer
    */
   payer: Account;
@@ -291,7 +322,14 @@ export class Token {
     programId: PublicKey,
     payer: Account,
   ) {
-    Object.assign(this, {connection, publicKey, programId, payer});
+    Object.assign(this, {
+      connection,
+      publicKey,
+      programId,
+      payer,
+      // Hard code is ok; Overriding is needed only for tests
+      associatedProgramId: ASSOCIATED_TOKEN_PROGRAM_ID,
+    });
   }
 
   /**
@@ -442,6 +480,101 @@ export class Token {
     );
 
     return newAccount.publicKey;
+  }
+
+  /**
+   * Create and initialize the associated account.
+   *
+   * This account may then be used as a `transfer()` or `approve()` destination
+   *
+   * @param owner User account that will own the new account
+   * @return Public key of the new associated account
+   */
+  async createAssociatedTokenAccount(owner: PublicKey): Promise<PublicKey> {
+    const associatedAddress = await Token.getAssociatedTokenAddress(
+      this.associatedProgramId,
+      this.programId,
+      this.publicKey,
+      owner,
+    );
+
+    return this.createAssociatedTokenAccountInternal(owner, associatedAddress);
+  }
+
+  async createAssociatedTokenAccountInternal(
+    owner: PublicKey,
+    associatedAddress: PublicKey,
+  ): Promise<PublicKey> {
+    await sendAndConfirmTransaction(
+      'CreateAssociatedTokenAccount',
+      this.connection,
+      new Transaction().add(
+        Token.createAssociatedTokenAccountInstruction(
+          this.associatedProgramId,
+          this.programId,
+          this.publicKey,
+          associatedAddress,
+          owner,
+          this.payer.publicKey,
+        ),
+      ),
+      this.payer,
+    );
+
+    return associatedAddress;
+  }
+
+  /**
+   * Retrieve the associated account or create one if not found.
+   *
+   * This account may then be used as a `transfer()` or `approve()` destination
+   *
+   * @param owner User account that will own the new account
+   * @return The new associated account
+   */
+  async getOrCreateAssociatedAccountInfo(
+    owner: PublicKey,
+  ): Promise<AccountInfo> {
+    const associatedAddress = await Token.getAssociatedTokenAddress(
+      this.associatedProgramId,
+      this.programId,
+      this.publicKey,
+      owner,
+    );
+
+    // This is the optimum logic, considering TX fee, client-side computation,
+    // RPC roundtrips and guaranteed idempotent.
+    // Sadly we can't do this atomically;
+    try {
+      return await this.getAccountInfo(associatedAddress);
+    } catch (err) {
+      // INVALID_ACCOUNT_OWNER can be possible if the associatedAddress has
+      // already been received some lamports (= became system accounts).
+      // Assuming program derived addressing is safe, this is the only case
+      // for the INVALID_ACCOUNT_OWNER in this code-path
+      if (
+        err.message === FAILED_TO_FIND_ACCOUNT ||
+        err.message === INVALID_ACCOUNT_OWNER
+      ) {
+        // as this isn't atomic, it's possible others can create associated
+        // accounts meanwhile
+        try {
+          await this.createAssociatedTokenAccountInternal(
+            owner,
+            associatedAddress,
+          );
+        } catch (err) {
+          // ignore all errors; for now there is no API compatible way to
+          // selectively ignore the expected instruction error if the
+          // associated account is existing already.
+        }
+
+        // Now this should always succeed
+        return await this.getAccountInfo(associatedAddress);
+      } else {
+        throw err;
+      }
+    }
   }
 
   /**
@@ -631,10 +764,10 @@ export class Token {
   ): Promise<AccountInfo> {
     const info = await this.connection.getAccountInfo(account, commitment);
     if (info === null) {
-      throw new Error('Failed to find account');
+      throw new Error(FAILED_TO_FIND_ACCOUNT);
     }
     if (!info.owner.equals(this.programId)) {
-      throw new Error(`Invalid account owner`);
+      throw new Error(INVALID_ACCOUNT_OWNER);
     }
     if (info.data.length != AccountLayout.span) {
       throw new Error(`Invalid account size`);
@@ -642,6 +775,7 @@ export class Token {
 
     const data = Buffer.from(info.data);
     const accountInfo = AccountLayout.decode(data);
+    accountInfo.address = account;
     accountInfo.mint = new PublicKey(accountInfo.mint);
     accountInfo.owner = new PublicKey(accountInfo.owner);
     accountInfo.amount = u64.fromBuffer(accountInfo.amount);
@@ -1089,7 +1223,7 @@ export class Token {
    * @param amount Number of tokens to transfer
    * @param decimals Number of decimals in transfer amount
    */
-  async transfer2(
+  async transferChecked(
     source: PublicKey,
     destination: PublicKey,
     owner: any,
@@ -1107,10 +1241,10 @@ export class Token {
       signers = multiSigners;
     }
     return await sendAndConfirmTransaction(
-      'Transfer2',
+      'TransferChecked',
       this.connection,
       new Transaction().add(
-        Token.createTransfer2Instruction(
+        Token.createTransferCheckedInstruction(
           this.programId,
           source,
           this.publicKey,
@@ -1137,7 +1271,7 @@ export class Token {
    * @param amount Maximum number of tokens the delegate may transfer
    * @param decimals Number of decimals in approve amount
    */
-  async approve2(
+  async approveChecked(
     account: PublicKey,
     delegate: PublicKey,
     owner: any,
@@ -1155,10 +1289,10 @@ export class Token {
       signers = multiSigners;
     }
     await sendAndConfirmTransaction(
-      'Approve2',
+      'ApproveChecked',
       this.connection,
       new Transaction().add(
-        Token.createApprove2Instruction(
+        Token.createApproveCheckedInstruction(
           this.programId,
           account,
           this.publicKey,
@@ -1183,7 +1317,7 @@ export class Token {
    * @param amount Amount to mint
    * @param decimals Number of decimals in amount to mint
    */
-  async mintTo2(
+  async mintToChecked(
     dest: PublicKey,
     authority: any,
     multiSigners: Array<Account>,
@@ -1200,10 +1334,10 @@ export class Token {
       signers = multiSigners;
     }
     await sendAndConfirmTransaction(
-      'MintTo2',
+      'MintToChecked',
       this.connection,
       new Transaction().add(
-        Token.createMintTo2Instruction(
+        Token.createMintToCheckedInstruction(
           this.programId,
           this.publicKey,
           dest,
@@ -1227,7 +1361,7 @@ export class Token {
    * @param amount Amount to burn
    * @param decimals Number of decimals in amount to burn
    */
-  async burn2(
+  async burnChecked(
     account: PublicKey,
     owner: any,
     multiSigners: Array<Account>,
@@ -1244,10 +1378,10 @@ export class Token {
       signers = multiSigners;
     }
     await sendAndConfirmTransaction(
-      'Burn2',
+      'BurnChecked',
       this.connection,
       new Transaction().add(
-        Token.createBurn2Instruction(
+        Token.createBurnCheckedInstruction(
           this.programId,
           this.publicKey,
           account,
@@ -1295,9 +1429,9 @@ export class Token {
         {
           instruction: 0, // InitializeMint instruction
           decimals,
-          mintAuthority: mintAuthority.toBuffer(),
+          mintAuthority: pubkeyToBuffer(mintAuthority),
           option: freezeAuthority === null ? 0 : 1,
-          freezeAuthority: (freezeAuthority || new PublicKey()).toBuffer(),
+          freezeAuthority: pubkeyToBuffer(freezeAuthority || new PublicKey()),
         },
         data,
       );
@@ -1539,7 +1673,7 @@ export class Token {
           instruction: 6, // SetAuthority instruction
           authorityType: AuthorityTypeCodes[authorityType],
           option: newAuthority === null ? 0 : 1,
-          newAuthority: (newAuthority || new PublicKey()).toBuffer(),
+          newAuthority: pubkeyToBuffer(newAuthority || new PublicKey()),
         },
         data,
       );
@@ -1835,7 +1969,7 @@ export class Token {
   }
 
   /**
-   * Construct a Transfer2 instruction
+   * Construct a TransferChecked instruction
    *
    * @param programId SPL Token program account
    * @param source Source account
@@ -1846,7 +1980,7 @@ export class Token {
    * @param amount Number of tokens to transfer
    * @param decimals Number of decimals in transfer amount
    */
-  static createTransfer2Instruction(
+  static createTransferCheckedInstruction(
     programId: PublicKey,
     source: PublicKey,
     mint: PublicKey,
@@ -1865,7 +1999,7 @@ export class Token {
     const data = Buffer.alloc(dataLayout.span);
     dataLayout.encode(
       {
-        instruction: 12, // Transfer2 instruction
+        instruction: 12, // TransferChecked instruction
         amount: new u64(amount).toBuffer(),
         decimals,
       },
@@ -1901,7 +2035,7 @@ export class Token {
   }
 
   /**
-   * Construct an Approve2 instruction
+   * Construct an ApproveChecked instruction
    *
    * @param programId SPL Token program account
    * @param account Public key of the account
@@ -1912,7 +2046,7 @@ export class Token {
    * @param amount Maximum number of tokens the delegate may transfer
    * @param decimals Number of decimals in approve amount
    */
-  static createApprove2Instruction(
+  static createApproveCheckedInstruction(
     programId: PublicKey,
     account: PublicKey,
     mint: PublicKey,
@@ -1931,7 +2065,7 @@ export class Token {
     const data = Buffer.alloc(dataLayout.span);
     dataLayout.encode(
       {
-        instruction: 13, // Approve2 instruction
+        instruction: 13, // ApproveChecked instruction
         amount: new u64(amount).toBuffer(),
         decimals,
       },
@@ -1964,7 +2098,7 @@ export class Token {
   }
 
   /**
-   * Construct a MintTo2 instruction
+   * Construct a MintToChecked instruction
    *
    * @param programId SPL Token program account
    * @param mint Public key of the mint
@@ -1974,7 +2108,7 @@ export class Token {
    * @param amount Amount to mint
    * @param decimals Number of decimals in amount to mint
    */
-  static createMintTo2Instruction(
+  static createMintToCheckedInstruction(
     programId: PublicKey,
     mint: PublicKey,
     dest: PublicKey,
@@ -1992,7 +2126,7 @@ export class Token {
     const data = Buffer.alloc(dataLayout.span);
     dataLayout.encode(
       {
-        instruction: 14, // MintTo2 instruction
+        instruction: 14, // MintToChecked instruction
         amount: new u64(amount).toBuffer(),
         decimals,
       },
@@ -2028,7 +2162,7 @@ export class Token {
   }
 
   /**
-   * Construct a Burn2 instruction
+   * Construct a BurnChecked instruction
    *
    * @param programId SPL Token program account
    * @param mint Mint for the account
@@ -2037,7 +2171,7 @@ export class Token {
    * @param multiSigners Signing accounts if `authority` is a multiSig
    * @param amount amount to burn
    */
-  static createBurn2Instruction(
+  static createBurnCheckedInstruction(
     programId: PublicKey,
     mint: PublicKey,
     account: PublicKey,
@@ -2055,7 +2189,7 @@ export class Token {
     const data = Buffer.alloc(dataLayout.span);
     dataLayout.encode(
       {
-        instruction: 15, // Burn2 instruction
+        instruction: 15, // BurnChecked instruction
         amount: new u64(amount).toBuffer(),
         decimals,
       },
@@ -2086,6 +2220,67 @@ export class Token {
     return new TransactionInstruction({
       keys,
       programId: programId,
+      data,
+    });
+  }
+
+  /**
+   * Get the address for the associated token account
+   *
+   * @param associatedProgramId SPL Associated Token program account
+   * @param programId SPL Token program account
+   * @param mint Token mint account
+   * @param owner Owner of the new account
+   * @return Public key of the associated token account
+   */
+  static async getAssociatedTokenAddress(
+    associatedProgramId: PublicKey,
+    programId: PublicKey,
+    mint: PublicKey,
+    owner: PublicKey,
+  ): Promise<PublicKey> {
+    return (
+      await PublicKey.findProgramAddress(
+        [owner.toBuffer(), programId.toBuffer(), mint.toBuffer()],
+        associatedProgramId,
+      )
+    )[0];
+  }
+
+  /**
+   * Construct the AssociatedTokenProgram instruction to create the associated
+   * token account
+   *
+   * @param associatedProgramId SPL Associated Token program account
+   * @param programId SPL Token program account
+   * @param mint Token mint account
+   * @param associatedAccount New associated account
+   * @param owner Owner of the new account
+   * @param payer Payer of fees
+   */
+  static createAssociatedTokenAccountInstruction(
+    associatedProgramId: PublicKey,
+    programId: PublicKey,
+    mint: PublicKey,
+    associatedAccount: PublicKey,
+    owner: PublicKey,
+    payer: PublicKey,
+  ): TransactionInstruction {
+    const data = Buffer.alloc(0);
+
+    let keys = [
+      {pubkey: payer, isSigner: true, isWritable: true},
+      {pubkey: associatedAccount, isSigner: false, isWritable: true},
+      {pubkey: owner, isSigner: false, isWritable: false},
+      {pubkey: mint, isSigner: false, isWritable: false},
+      {pubkey: SystemProgram.programId, isSigner: false, isWritable: false},
+      {pubkey: programId, isSigner: false, isWritable: false},
+      {pubkey: SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false},
+    ];
+
+    return new TransactionInstruction({
+      keys,
+      programId: associatedProgramId,
       data,
     });
   }
