@@ -8,6 +8,6 @@ pub mod state;
 
 // Export current solana-sdk types for downstream users who may also be building with a different
 // solana-sdk version
-pub use solana_sdk;
+pub use solana_program;
 
-solana_sdk::declare_id!("MetamaskW1111111111111111111111111111111111");
+solana_program::declare_id!("MetamaskW1111111111111111111111111111111111");
