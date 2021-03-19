@@ -5,6 +5,7 @@ use evm::{
 use core::convert::Infallible;
 use primitive_types::{H160, H256, U256};
 use sha3::{Digest, Keccak256};
+use k256::{ecdsa, FieldBytes, elliptic_curve::sec1::ToEncodedPoint};
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     pubkey::Pubkey,
@@ -15,6 +16,7 @@ use solana_program::{
 };
 use std::{
     cell::RefCell,
+    convert::TryFrom
 };
 
 use crate::solidity_account::SolidityAccount;
@@ -117,8 +119,24 @@ impl<'a> SolanaBackend<'a> {
         *code_address == Self::system_account()
     }
 
+    fn is_ecrecover_address(&self, code_address: &H160) -> bool {
+        *code_address == Self::system_account_ecrecover()
+    }
+
     pub fn system_account() -> H160 {
         H160::from_slice(&[0xffu8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])
+    }
+
+    pub fn system_account_ecrecover() -> H160 {
+        H160::from_slice(&[0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0x01u8])
+    }
+
+    pub fn system_account_sha256() -> H160 {
+        H160::from_slice(&[0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0x02u8])
+    }
+
+    pub fn system_account_ripemd160() -> H160 {
+        H160::from_slice(&[0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0x03u8])
     }
 
     pub fn apply<A, I>(&mut self, values: A, delete_empty: bool, skip_addr: Option<(H160, bool)>) -> Result<(), ProgramError>
@@ -127,12 +145,13 @@ impl<'a> SolanaBackend<'a> {
                 I: IntoIterator<Item=(H256, H256)>
     {
         let ether_addr = skip_addr.unwrap_or_else(|| (H160::zero(), true));
-        let system_account = Self::system_account();        
+        let system_account = Self::system_account();
+        let system_account_ecrecover = Self::system_account_ecrecover();          
 
         for apply in values {
             match apply {
                 Apply::Modify {address, basic, code, storage, reset_storage} => {   
-                    if address == system_account {
+                    if (address == system_account) || (address == system_account_ecrecover) {
                         continue;
                     }
                     if ether_addr.1 != true && address == ether_addr.0 {
@@ -149,75 +168,8 @@ impl<'a> SolanaBackend<'a> {
 
         Ok(())
     }
-}
 
-impl<'a> Backend for SolanaBackend<'a> {
-    fn gas_price(&self) -> U256 { U256::zero() }
-    fn origin(&self) -> H160 { self.aliases.borrow()[1].0 }
-    fn block_hash(&self, _number: U256) -> H256 { H256::default() }
-    fn block_number(&self) -> U256 {
-        //let clock = &Clock::from_account_info(&self.accounts[self.accounts.len()-1].account_info).unwrap();
-        let clock = &Clock::from_account_info(self.clock_account).unwrap();
-        clock.slot.into()
-    }
-    fn block_coinbase(&self) -> H160 { H160::default() }
-    fn block_timestamp(&self) -> U256 {
-        //let clock = &Clock::from_account_info(&self.accounts[self.accounts.len()-1].account_info).unwrap();
-        let clock = &Clock::from_account_info(self.clock_account).unwrap();
-        clock.unix_timestamp.into()
-    }
-    fn block_difficulty(&self) -> U256 { U256::zero() }
-    fn block_gas_limit(&self) -> U256 { U256::zero() }
-    fn chain_id(&self) -> U256 { U256::zero() }
-
-    fn exists(&self, address: H160) -> bool {
-        self.get_account(address).map_or(false, |_| true)
-    }
-    fn basic(&self, address: H160) -> Basic {
-        match self.get_account(address) {
-            None => Basic{balance: U256::zero(), nonce: U256::zero()},
-            Some(acc) => Basic{
-                balance: (**acc.account_info.lamports.borrow()).into(),
-                nonce: U256::from(acc.account_data.trx_count),
-            },
-        }
-    }
-    fn code_hash(&self, address: H160) -> H256 {
-        self.get_account(address).map_or_else(
-                || keccak256_digest(&[]), 
-                |acc| acc.code(|d| {debug_print!(&hex::encode(&d[0..32])); keccak256_digest(d)})
-            )
-    }
-    fn code_size(&self, address: H160) -> usize {
-        self.get_account(address).map_or_else(|| 0, |acc| acc.code(|d| d.len()))
-    }
-    fn code(&self, address: H160) -> Vec<u8> {
-        self.get_account(address).map_or_else(|| Vec::new(), |acc| acc.code(|d| d.into()))
-    }
-    fn storage(&self, address: H160, index: H256) -> H256 {
-        match self.get_account(address) {
-            None => H256::default(),
-            Some(acc) => {
-                let index = index.as_fixed_bytes().into();
-                let value = acc.storage(|storage| storage.find(index)).unwrap_or_default();
-                if let Some(v) = value {u256_to_h256(v)} else {H256::default()}
-            },
-        }
-    }
-
-    fn create(&self, _scheme: &CreateScheme, _address: &H160) {
-        if let CreateScheme::Create2 {caller, code_hash, salt} = _scheme {
-            debug_print!(&("CreateScheme2 ".to_owned()+&hex::encode(_address)+" from "+
-                  &hex::encode(caller)+" "+&hex::encode(code_hash)+" "+&hex::encode(salt)));
-        } else {
-            debug_print!("Call create");
-        }
-    /*    let account = if let CreateScheme::Create2{salt,..} = scheme
-                {Pubkey::new(&salt.to_fixed_bytes())} else {Pubkey::default()};
-        self.add_alias(address, &account);*/
-    }
-
-    fn call_inner(&self,
+    pub fn call_inner_ecrecover(&self,
         code_address: H160,
         _transfer: Option<Transfer>,
         input: Vec<u8>,
@@ -226,11 +178,73 @@ impl<'a> Backend for SolanaBackend<'a> {
         _take_l64: bool,
         _take_stipend: bool,
     ) -> Option<Capture<(ExitReason, Vec<u8>), Infallible>> {
-        if !self.is_solana_address(&code_address) {
-            return None;
+        debug_print!("ecrecover");
+        debug_print!("input: {}", hex::encode(&input));
+    
+        if (input.len() != 128) {
+            return Some(Capture::Exit((ExitReason::Succeed(evm::ExitSucceed::Returned), vec![0; 20])));
         }
 
-        debug_print!("Call inner");
+        let signature = match ecdsa::Signature::try_from(&input[64..128]) {
+            Ok(signature) => signature,
+            Err(_) => return Some(Capture::Exit((ExitReason::Succeed(evm::ExitSucceed::Returned), vec![0; 32])))
+        };
+        debug_print!("signature: {:?}", signature);
+
+        let v = U256::from(&input[32..64]);
+        let v = v - 27;
+        if ( v > U256::from(u8::MAX) ) {
+            debug_print!("invalid recovery id: {}", v);
+            return Some(Capture::Exit((ExitReason::Succeed(evm::ExitSucceed::Returned), vec![0; 32])));
+        }
+        let v = v.as_u32() as u8;
+
+        let recovery_id = match ecdsa::recoverable::Id::new(v) {
+            Ok(recovery_id) => recovery_id,
+            Err(_) => return Some(Capture::Exit((ExitReason::Succeed(evm::ExitSucceed::Returned), vec![0; 32])))
+        };
+        debug_print!("recovery id: {:?}", recovery_id);
+
+
+        let recoverable_signature = match ecdsa::recoverable::Signature::new(&signature, recovery_id) {
+            Ok(signature) => signature,
+            Err(_) => return Some(Capture::Exit((ExitReason::Succeed(evm::ExitSucceed::Returned), vec![0; 32])))
+        };
+        debug_print!("recoverable signature: {:?}", recoverable_signature);
+
+
+        let digest = FieldBytes::from_slice(&input[0..32]);
+        debug_print!("digest: {:x}", digest);
+
+        let verify_key = match recoverable_signature.recover_verify_key_from_digest_bytes(digest) {
+            Ok(verify_key) => verify_key,
+            Err(_) => return Some(Capture::Exit((ExitReason::Succeed(evm::ExitSucceed::Returned), vec![0; 32])))
+        };
+        debug_print!("verify key restored");
+
+        let public_key = match verify_key.to_encoded_point(false).to_untagged_bytes() {
+            Some(public_key) => public_key,
+            None => return Some(Capture::Exit((ExitReason::Succeed(evm::ExitSucceed::Returned), vec![0; 32])))
+        };
+        debug_print!("public key: {:x}", public_key);
+
+        let mut ether_address = Keccak256::digest(&public_key);
+        for i in 0..12 { ether_address[i] = 0 }
+        debug_print!("ether address: {:x}", &ether_address);
+    
+        return Some(Capture::Exit((ExitReason::Succeed(evm::ExitSucceed::Returned), ether_address.to_vec())));
+    }
+
+    fn call_inner_solana(&self,
+        code_address: H160,
+        _transfer: Option<Transfer>,
+        input: Vec<u8>,
+        _target_gas: Option<usize>,
+        _is_static: bool,
+        _take_l64: bool,
+        _take_stipend: bool,
+    ) -> Option<Capture<(ExitReason, Vec<u8>), Infallible>> {
+        debug_print!("Call inner solana");
         debug_print!(&code_address.to_string());
         debug_print!(&hex::encode(&input));
 
@@ -331,6 +345,93 @@ impl<'a> Backend for SolanaBackend<'a> {
                 return Some(Capture::Exit((ExitReason::Error(evm::ExitError::InvalidRange), Vec::new())));
             }
         }
+    }
+}
+
+impl<'a> Backend for SolanaBackend<'a> {
+    fn gas_price(&self) -> U256 { U256::zero() }
+    fn origin(&self) -> H160 { self.aliases.borrow()[1].0 }
+    fn block_hash(&self, _number: U256) -> H256 { H256::default() }
+    fn block_number(&self) -> U256 {
+        //let clock = &Clock::from_account_info(&self.accounts[self.accounts.len()-1].account_info).unwrap();
+        let clock = &Clock::from_account_info(self.clock_account).unwrap();
+        clock.slot.into()
+    }
+    fn block_coinbase(&self) -> H160 { H160::default() }
+    fn block_timestamp(&self) -> U256 {
+        //let clock = &Clock::from_account_info(&self.accounts[self.accounts.len()-1].account_info).unwrap();
+        let clock = &Clock::from_account_info(self.clock_account).unwrap();
+        clock.unix_timestamp.into()
+    }
+    fn block_difficulty(&self) -> U256 { U256::zero() }
+    fn block_gas_limit(&self) -> U256 { U256::zero() }
+    fn chain_id(&self) -> U256 { U256::zero() }
+
+    fn exists(&self, address: H160) -> bool {
+        self.get_account(address).map_or(false, |_| true)
+    }
+    fn basic(&self, address: H160) -> Basic {
+        match self.get_account(address) {
+            None => Basic{balance: U256::zero(), nonce: U256::zero()},
+            Some(acc) => Basic{
+                balance: (**acc.account_info.lamports.borrow()).into(),
+                nonce: U256::from(acc.account_data.trx_count),
+            },
+        }
+    }
+    fn code_hash(&self, address: H160) -> H256 {
+        self.get_account(address).map_or_else(
+                || keccak256_digest(&[]), 
+                |acc| acc.code(|d| {debug_print!(&hex::encode(&d[0..32])); keccak256_digest(d)})
+            )
+    }
+    fn code_size(&self, address: H160) -> usize {
+        self.get_account(address).map_or_else(|| 0, |acc| acc.code(|d| d.len()))
+    }
+    fn code(&self, address: H160) -> Vec<u8> {
+        self.get_account(address).map_or_else(|| Vec::new(), |acc| acc.code(|d| d.into()))
+    }
+    fn storage(&self, address: H160, index: H256) -> H256 {
+        match self.get_account(address) {
+            None => H256::default(),
+            Some(acc) => {
+                let index = index.as_fixed_bytes().into();
+                let value = acc.storage(|storage| storage.find(index)).unwrap_or_default();
+                if let Some(v) = value {u256_to_h256(v)} else {H256::default()}
+            },
+        }
+    }
+
+    fn create(&self, _scheme: &CreateScheme, _address: &H160) {
+        if let CreateScheme::Create2 {caller, code_hash, salt} = _scheme {
+            debug_print!(&("CreateScheme2 ".to_owned()+&hex::encode(_address)+" from "+
+                  &hex::encode(caller)+" "+&hex::encode(code_hash)+" "+&hex::encode(salt)));
+        } else {
+            debug_print!("Call create");
+        }
+    /*    let account = if let CreateScheme::Create2{salt,..} = scheme
+                {Pubkey::new(&salt.to_fixed_bytes())} else {Pubkey::default()};
+        self.add_alias(address, &account);*/
+    }
+
+    fn call_inner(&self,
+        code_address: H160,
+        _transfer: Option<Transfer>,
+        input: Vec<u8>,
+        _target_gas: Option<usize>,
+        _is_static: bool,
+        _take_l64: bool,
+        _take_stipend: bool,
+    ) -> Option<Capture<(ExitReason, Vec<u8>), Infallible>> {
+        if (self.is_solana_address(&code_address)) {
+            return self.call_inner_solana(code_address, _transfer, input, _target_gas, _is_static, _take_l64, _take_stipend);
+        }
+
+        if (self.is_ecrecover_address(&code_address)) {
+            return self.call_inner_ecrecover(code_address, _transfer, input, _target_gas, _is_static, _take_l64, _take_stipend);
+        }
+
+        return None;
     }
 }
 
