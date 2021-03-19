@@ -21,7 +21,7 @@ use solana_sdk::{
 };
 
 //use crate::hamt::Hamt;
-use crate::solana_backend::{
+use solana_backend::solana_backend::{
     SolanaBackend, solidity_address,
 };
 

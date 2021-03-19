@@ -1,9 +1,7 @@
 use arrayref::{array_ref, array_refs, array_mut_ref, mut_array_refs};
-use primitive_types::{U256,H160};
-use solana_sdk::{
-    program_error::ProgramError,
-    pubkey::Pubkey,
-};
+use primitive_types::H160;
+use solana_sdk::pubkey::Pubkey;
+use crate::constatns::ProgramError;
 
 #[derive(Debug,Clone)]
 pub struct AccountData {

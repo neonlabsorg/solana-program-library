@@ -64,7 +64,7 @@ impl SolanaBackend {
         })
     }
 
-    fn create_acc_if_not_exists(&self, address: H160) -> bool {
+    fn create_acc_if_not_exists(&self, address: H160) {
         let mut accounts = self.accounts.borrow_mut(); 
         let mut new_accounts = self.new_accounts.borrow_mut(); 
         if accounts.get(&address).is_none() {
@@ -82,20 +82,14 @@ impl SolanaBackend {
                     eprintln!("Account owner {}", acc.owner.to_string());
                    
                     accounts.insert(address, SolidityAccount::new(acc.data, acc.lamports).unwrap());
-
-                    true
                 },
                 Err(_) => {
                     eprintln!("Account not found {}", &address.to_string());
 
                     new_accounts.insert(address);
-
-                    false
                 }
             }
-        } else {
-            true
-        }
+        } 
     }
 
     pub fn apply<A, I, L>(&mut self, values: A, _logs: L, _delete_empty: bool)
@@ -202,7 +196,12 @@ impl Backend for SolanaBackend {
     fn chain_id(&self) -> U256 { U256::zero() }
 
     fn exists(&self, address: H160) -> bool {
-        self.create_acc_if_not_exists(address)
+        self.create_acc_if_not_exists(address);
+        let accounts = self.accounts.borrow();
+        match accounts.get(&address) {
+            None => false,
+            Some(_) => true,
+        }
     }
     fn basic(&self, address: H160) -> Basic {
         self.create_acc_if_not_exists(address);

@@ -6,5 +6,5 @@ macro_rules! debug_print {
 
 #[cfg(not(feature = "evm_debug"))]
 macro_rules! debug_print {
-    ($( $args:expr ),*) => {}
+    ($( $args:expr ),*) => { eprintln!("{}", $( $args ),* ) }
 }
