@@ -5,12 +5,14 @@ use evm::{
 };
 use primitive_types::{H160, H256, U256};
 use sha3::{Digest, Keccak256};
+use k256::{ecdsa, FieldBytes, elliptic_curve::sec1::ToEncodedPoint};
 use solana_sdk::pubkey::Pubkey;
 
 use crate::solidity_account::SolidityAccount;
 use std::borrow::Borrow;
 use std::borrow::BorrowMut;
 use std::cell::RefCell; 
+use std::convert::TryFrom;
 
 use solana_client::rpc_client::RpcClient;
 
@@ -104,12 +106,16 @@ impl SolanaBackend {
                 I: IntoIterator<Item=(H256, H256)>,
                 L: IntoIterator<Item=Log>,
     {             
+        let system_account_ecrecover = Self::system_account_ecrecover();          
         let mut accounts = self.accounts.borrow_mut(); 
 
 
         for apply in values {
             match apply {
                 Apply::Modify {address, basic, code: _, storage: _, reset_storage} => {
+                    if (address == system_account_ecrecover) {
+                        continue;
+                    }
                     match accounts.get_mut(&address) {
                         Some(acc) => {
                             *acc.updated.borrow_mut() = true;
@@ -125,6 +131,80 @@ impl SolanaBackend {
                 },
             }
         };
+    }
+
+    fn is_ecrecover_address(&self, code_address: &H160) -> bool {
+        *code_address == Self::system_account_ecrecover()
+    }
+
+    pub fn system_account_ecrecover() -> H160 {
+        H160::from_slice(&[0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0x01u8])
+    }
+
+    pub fn call_inner_ecrecover(&self,
+        code_address: H160,
+        _transfer: Option<Transfer>,
+        input: Vec<u8>,
+        _target_gas: Option<usize>,
+        _is_static: bool,
+        _take_l64: bool,
+        _take_stipend: bool,
+    ) -> Option<Capture<(ExitReason, Vec<u8>), Infallible>> {
+        eprintln!("ecrecover");
+        eprintln!("input: {}", hex::encode(&input));
+    
+        if (input.len() != 128) {
+            return Some(Capture::Exit((ExitReason::Succeed(evm::ExitSucceed::Returned), vec![0; 20])));
+        }
+
+        let signature = match ecdsa::Signature::try_from(&input[64..128]) {
+            Ok(signature) => signature,
+            Err(_) => return Some(Capture::Exit((ExitReason::Succeed(evm::ExitSucceed::Returned), vec![0; 32])))
+        };
+        eprintln!("signature: {:?}", signature);
+
+        let v = U256::from(&input[32..64]);
+        let v = v - 27;
+        if ( v > U256::from(u8::MAX) ) {
+            eprintln!("invalid recovery id: {}", v);
+            return Some(Capture::Exit((ExitReason::Succeed(evm::ExitSucceed::Returned), vec![0; 32])));
+        }
+        let v = v.as_u32() as u8;
+
+        let recovery_id = match ecdsa::recoverable::Id::new(v) {
+            Ok(recovery_id) => recovery_id,
+            Err(_) => return Some(Capture::Exit((ExitReason::Succeed(evm::ExitSucceed::Returned), vec![0; 32])))
+        };
+        eprintln!("recovery id: {:?}", recovery_id);
+
+
+        let recoverable_signature = match ecdsa::recoverable::Signature::new(&signature, recovery_id) {
+            Ok(signature) => signature,
+            Err(_) => return Some(Capture::Exit((ExitReason::Succeed(evm::ExitSucceed::Returned), vec![0; 32])))
+        };
+        eprintln!("recoverable signature: {:?}", recoverable_signature);
+
+
+        let digest = FieldBytes::from_slice(&input[0..32]);
+        eprintln!("digest: {:x}", digest);
+
+        let verify_key = match recoverable_signature.recover_verify_key_from_digest_bytes(digest) {
+            Ok(verify_key) => verify_key,
+            Err(_) => return Some(Capture::Exit((ExitReason::Succeed(evm::ExitSucceed::Returned), vec![0; 32])))
+        };
+        eprintln!("verify key restored");
+
+        let public_key = match verify_key.to_encoded_point(false).to_untagged_bytes() {
+            Some(public_key) => public_key,
+            None => return Some(Capture::Exit((ExitReason::Succeed(evm::ExitSucceed::Returned), vec![0; 32])))
+        };
+        eprintln!("public key: {:x}", public_key);
+
+        let mut ether_address = Keccak256::digest(&public_key);
+        for i in 0..12 { ether_address[i] = 0 }
+        eprintln!("ether address: {:x}", &ether_address);
+    
+        return Some(Capture::Exit((ExitReason::Succeed(evm::ExitSucceed::Returned), ether_address.to_vec())));
     }
 
     pub fn get_used_accounts(&self, status: &String, result: &std::vec::Vec<u8>)
@@ -268,14 +348,17 @@ impl Backend for SolanaBackend {
         self.add_alias(address, &account);*/
     }
     fn call_inner(&self,
-        _code_address: H160,
+        code_address: H160,
         _transfer: Option<Transfer>,
-        _input: Vec<u8>,
+        input: Vec<u8>,
         _target_gas: Option<usize>,
         _is_static: bool,
         _take_l64: bool,
         _take_stipend: bool,
     ) -> Option<Capture<(ExitReason, Vec<u8>), Infallible>> {
+        if (self.is_ecrecover_address(&code_address)) {
+            return self.call_inner_ecrecover(code_address, _transfer, input, _target_gas, _is_static, _take_l64, _take_stipend);
+        }
 
         return None;
     //     if !self.is_solana_address(&code_address) {
