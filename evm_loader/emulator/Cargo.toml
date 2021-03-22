@@ -16,3 +16,5 @@ sha3 = ""
 arrayref = ""
 serde = ""
 serde_json = ""
+getrandom = { version = "0.1.16", default_features = false, features = ["dummy"] }
+k256 = { version = "0.7.2", default-features = false, features = ["ecdsa"] }
