@@ -1,9 +1,8 @@
 use primitive_types::U256;
 use arrayref::{array_ref, array_mut_ref, mut_array_refs};
 use std::mem::size_of;
-use solana_sdk::{
-    program_error::ProgramError,
-};
+use solana_sdk::program_error::ProgramError;
+// use crate::constatns::ProgramError;
 
 /*
 #[derive(Debug)]
@@ -314,7 +313,7 @@ mod test {
             hamt.insert(U256::from(0x31423415u64+i*32*0x60), U256::from(0xdead00+i))?;
         }
 
-        for i in 0..16 {
+        for _ in 0..16 {
             hamt.insert(random_U256(), random_U256())?;
         }
 
