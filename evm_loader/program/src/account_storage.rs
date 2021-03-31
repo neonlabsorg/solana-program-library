@@ -33,7 +33,17 @@ impl<'a> ProgramAccountStorage<'a> {
         for (i, account) in (&account_infos).iter().enumerate() {
             debug_print!(&i.to_string());
             if account.owner == program_id {
-                let sol_account = SolidityAccount::new(account.key, account.data.clone(), (*account.lamports.borrow()).clone())?;
+                let account_data = account.data.borrow();
+                let code_account = SolidityAccount::get_code_account(&account_data)?;
+                let code_data = if code_account == Pubkey::new_from_array([0u8; 32]) {
+                    None
+                } else {
+                    if account_infos.len() < i+2 || *account_infos[i+1].key != code_account {
+                        return Err(ProgramError::NotEnoughAccountKeys)
+                    }
+                    Some(account_infos[i+1].data.clone())
+                };                
+                let sol_account = SolidityAccount::new(account.key, &account_data, (*account.lamports.borrow()).clone(), code_data)?;
                 aliases.push((sol_account.get_ether(), i));
                 accounts.push(Some(sol_account));
             } else {

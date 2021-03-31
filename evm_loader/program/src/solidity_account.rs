@@ -17,27 +17,39 @@ use std::convert::TryInto;
 
 #[derive(Debug, Clone)]
 pub struct SolidityAccount<'a> {
-    pub account_data: AccountData,
-    pub solana_address: &'a Pubkey,
-    pub data: Rc<RefCell<&'a mut [u8]>>,
-    pub lamports: u64,
+    account_data: AccountData,
+    solana_address: &'a Pubkey,
+    code_data: Option<Rc<RefCell<&'a mut [u8]>>>,
+    lamports: u64,
     pub updated: bool,
 }
 
 impl<'a> SolidityAccount<'a> {
-    pub fn new(solana_address: &'a Pubkey, data: Rc<RefCell<&'a mut [u8]>>, lamports: u64) -> Result<Self, ProgramError> {
+    pub fn new(solana_address: &'a Pubkey, data: &[u8], lamports: u64, code_data: Option<Rc<RefCell<&'a mut [u8]>>>) -> Result<Self, ProgramError> {
         debug_print!("  SolidityAccount::new");
-        let data_b = data.borrow();
-        debug_print!(&("  Get data with length ".to_owned() + &data_b.len().to_string()));
-        let (account_data, _) = AccountData::unpack(&data_b)?;
-        Ok(Self{account_data, solana_address, data: data.clone(), lamports, updated: false})
+        debug_print!(&("  Get data with length ".to_owned() + &data.len().to_string()));
+        let (account_data, _) = AccountData::unpack(&data)?;
+        if account_data.code_size > 0 {
+            if code_data.is_none() {
+                return Err(ProgramError::InvalidAccountData);
+            }
+            if code_data.as_ref().unwrap().borrow().len() < account_data.code_size.try_into().unwrap() {
+                return Err(ProgramError::InvalidAccountData);
+            }
+            if account_data.code_account == Pubkey::new_from_array([0u8; 32]) {
+                return Err(ProgramError::InvalidAccountData);
+            }
+        }
+        Ok(Self{account_data, solana_address, code_data: code_data, lamports, updated: false})
     }
 
-    pub fn get_ether(&self) -> H160 {self.account_data.ether}
+    pub fn get_code_account(data: &[u8]) -> Result<Pubkey, ProgramError> {
+        debug_print!("  SolidityAccount::get_code_account");
+        debug_print!(&("  Get data with length ".to_owned() + &data.len().to_string()));
+        AccountData::get_code_account(&data)
+    }
 
-    pub fn get_nonce(&self) -> u64 {self.account_data.trx_count}
-
-    pub fn code<U, F>(&self, f: F) -> U
+    fn code<U, F>(&self, f: F) -> U
     where F: FnOnce(&[u8]) -> U {
         /*if let AccountData::Account{code_size,..} = self.account_data {
             if code_size > 0 {
@@ -46,8 +58,9 @@ impl<'a> SolidityAccount<'a> {
                 return f(&data[offset..offset+code_size as usize])
             }
         }*/
-        if self.account_data.code_size > 0 {
-            let data = self.data.borrow();
+        if self.account_data.code_size > 0 && self.code_data.is_some() {
+            let some_data = self.code_data.as_ref().unwrap();
+            let data = some_data.borrow();
             let offset = AccountData::SIZE;
             let code_size = self.account_data.code_size as usize;
             f(&data[offset..offset + code_size])
@@ -56,7 +69,7 @@ impl<'a> SolidityAccount<'a> {
         }
     }
 
-    pub fn storage<U, F>(&self, f: F) -> Result<U, ProgramError>
+    fn storage<U, F>(&self, f: F) -> Result<U, ProgramError>
     where F: FnOnce(&mut Hamt) -> U {
         /*if let AccountData::Account{code_size,..} = self.account_data {
             if code_size > 0 {
@@ -68,8 +81,9 @@ impl<'a> SolidityAccount<'a> {
             }
         }
         Err(ProgramError::UninitializedAccount)*/
-        if self.account_data.code_size > 0 {
-            let mut data = self.data.borrow_mut();
+        if self.account_data.code_size > 0 && self.code_data.is_some() {
+            let mut some_data = self.code_data.as_ref().unwrap();
+            let mut data = some_data.borrow_mut();
             debug_print!("Storage data borrowed");
             let code_size = self.account_data.code_size as usize;
             let offset = AccountData::SIZE + code_size;
@@ -106,9 +120,14 @@ impl<'a> SolidityAccount<'a> {
             if self.account_data.code_size != 0 {
                 return Err(ProgramError::AccountAlreadyInitialized);
             };
+            if self.code_data.is_none() {
+                debug_print!("Expected code account");
+                return Err(ProgramError::NotEnoughAccountKeys);
+            };
             self.account_data.code_size = code.len().try_into().map_err(|_| ProgramError::AccountDataTooSmall)?;
             debug_print!("Write code");
-            data[AccountData::SIZE..AccountData::SIZE + code.len()].copy_from_slice(&code);
+            let mut code_data = self.code_data.as_ref().unwrap().borrow_mut();
+            code_data[..code.len()].copy_from_slice(&code);
             debug_print!("Code written");
         }
 
@@ -122,7 +141,8 @@ impl<'a> SolidityAccount<'a> {
             let code_size = self.account_data.code_size as usize;
             if code_size == 0 {return Err(ProgramError::UninitializedAccount);};
 
-            let mut storage = Hamt::new(&mut data[AccountData::SIZE + code_size..], reset_storage)?;
+            let mut code_data = self.code_data.as_ref().unwrap().borrow_mut();
+            let mut storage = Hamt::new(&mut code_data[code_size..], reset_storage)?;
             debug_print!("Storage initialized");
             for (key, value) in storage_iter {
                 debug_print!(&("Storage value: ".to_owned() + &key.to_string() + " = " + &value.to_string()));
@@ -132,6 +152,14 @@ impl<'a> SolidityAccount<'a> {
 
         debug_print!("Account updated");
         Ok(())
+    }
+
+    pub fn get_ether(&self) -> H160 {self.account_data.ether}
+
+    pub fn get_nonce(&self) -> u64 {self.account_data.trx_count}
+
+    pub fn get_signer(&self) -> &Pubkey {
+        &self.account_data.signer
     }
 
     pub fn get_solana_address(&self) -> &Pubkey {
