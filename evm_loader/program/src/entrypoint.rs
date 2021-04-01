@@ -137,31 +137,6 @@ fn process_instruction<'a>(
             account_data.pack(&mut data)?;
             Ok(())
         },
-        EvmInstruction::CreateCodeAccount {lamports, space, ether, nonce} => {
-            debug_print!("CreateAccount");
-            let funding_info = next_account_info(account_info_iter)?;
-            let program_code = next_account_info(account_info_iter)?;
-
-            let seeds_vec = [ether.as_bytes(), "code".as_bytes()].concat();
-            let seeds: &[u8] = seeds_vec.as_slice();
-            // let seeds = [ether.as_bytes(), "code".as_bytes()].concat();
-
-            debug_print!(&("Ether:".to_owned()+&(hex::encode(seeds))+" "+&hex::encode([nonce])));
-
-            let expected_address = Pubkey::create_program_address(&[seeds, &[nonce]], program_id)?;
-            if expected_address != *program_code.key {
-                return Err(ProgramError::InvalidArgument);
-            };
-
-            let program_seeds = [seeds, &[nonce]];
-            invoke_signed(
-                &create_account(funding_info.key, program_code.key, lamports, AccountData::SIZE as u64 + space, program_id),
-                &accounts, &[&program_seeds[..]]
-            )?;
-            debug_print!("create_account done");
-
-            Ok(())
-        },
         EvmInstruction::CreateProgramAccount {lamports, space, ether, nonce} => {
             debug_print!("CreateProgramAccount");
             let funding_info = next_account_info(account_info_iter)?;
