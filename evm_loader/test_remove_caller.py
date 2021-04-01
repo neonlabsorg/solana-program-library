@@ -33,11 +33,14 @@ class EvmLoaderTestsNewAccount(unittest.TestCase):
         cls.loader = EvmLoader(solana_url, cls.acc)
         cls.evm_loader = cls.loader.loader_id
         print("evm loader id: ", cls.evm_loader)
-        cls.owner_contract = cls.loader.deployChecked(
+        program_and_code = cls.loader.deployChecked(
                 CONTRACTS_DIR+'helloWorld.binary',
                 solana2ether(cls.acc.get_acc().public_key())
-            )[0]
+            )
+        cls.owner_contract = program_and_code[0]
+        cls.contract_code = program_and_code[2]
         print("contract id: ", cls.owner_contract)
+        print("code id: ", cls.contract_code)
 
         cls.caller_ether = solana2ether(cls.acc.get_acc().public_key())
         (cls.caller, cls.caller_nonce) = cls.loader.ether2program(cls.caller_ether)
@@ -55,6 +58,7 @@ class EvmLoaderTestsNewAccount(unittest.TestCase):
         trx = Transaction().add(
             TransactionInstruction(program_id=self.evm_loader, data=call_hello, keys=[
                 AccountMeta(pubkey=self.owner_contract, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=self.contract_code, is_signer=False, is_writable=True),
                 AccountMeta(pubkey=self.acc.get_acc().public_key(), is_signer=True, is_writable=False),
                 AccountMeta(pubkey=self.evm_loader, is_signer=False, is_writable=False),
                 AccountMeta(pubkey=PublicKey("SysvarC1ock11111111111111111111111111111111"), is_signer=False, is_writable=False),
@@ -67,6 +71,7 @@ class EvmLoaderTestsNewAccount(unittest.TestCase):
         trx = Transaction().add(
             TransactionInstruction(program_id=self.evm_loader, data=call_hello, keys=[
                 AccountMeta(pubkey=self.owner_contract, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=self.contract_code, is_signer=False, is_writable=True),
                 AccountMeta(pubkey=self.caller, is_signer=False, is_writable=True),
                 AccountMeta(pubkey=self.acc.get_acc().public_key(), is_signer=True, is_writable=False),
                 AccountMeta(pubkey=self.evm_loader, is_signer=False, is_writable=False),
@@ -89,6 +94,7 @@ class EvmLoaderTestsNewAccount(unittest.TestCase):
         trx = Transaction().add(
             TransactionInstruction(program_id=self.evm_loader, data=call_hello, keys=[
                 AccountMeta(pubkey=self.owner_contract, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=self.contract_code, is_signer=False, is_writable=True),
                 AccountMeta(pubkey=self.caller, is_signer=False, is_writable=True),
                 AccountMeta(pubkey=acc.public_key(), is_signer=True, is_writable=False),
                 AccountMeta(pubkey=self.evm_loader, is_signer=False, is_writable=False),
