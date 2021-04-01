@@ -16,7 +16,7 @@ class EvmLoaderTestsNewAccount(unittest.TestCase):
         cls.acc = WalletAccount(wallet_path())
 
         # print(bytes(cls.acc.public_key()).hex())
-        if getBalance(cls.acc.get_acc().public_key()) == 0:
+        if getBalance(cls.acc.get_acc().public_key()) < 50:
             print("request_airdrop for ", cls.acc.get_acc().public_key())
             cli = SolanaCli(solana_url, cls.acc)
             cli.call('airdrop 1000000')
@@ -26,15 +26,20 @@ class EvmLoaderTestsNewAccount(unittest.TestCase):
             print("Done\n")
             
         cls.loader = EvmLoader(solana_url, cls.acc)
-        # cls.loader = EvmLoader(solana_url, cls.acc, 'ChcwPA3VHaKHEuzikJXHEy6jP5Ycn9ZV7KYZXfeiNp5m')
+        # cls.loader = EvmLoader(solana_url, cls.acc, 'EcHjJXo2sobqedtHXBwfvvKBbxi4PnYBpZMutba2GEan')
         cls.evm_loader = cls.loader.loader_id
         print("evm loader id: ", cls.evm_loader)
-        cls.owner_contract = cls.loader.deployChecked(
+        program_and_code = cls.loader.deployChecked(
                 CONTRACTS_DIR+'helloWorld.binary',
                 solana2ether(cls.acc.get_acc().public_key())
-            )[0]
-        # cls.owner_contract = "HAAfFJK4tsJb38LC2MULMzgpYkqAKRguyq7GRTocvGE9"
+            )
+        cls.owner_contract = program_and_code[0]
+        cls.contract_code = program_and_code[2]
+
+        # cls.owner_contract = "4ftFT1kSpvaYVYMXiRdBz38eE9GJcQcxW29o55q8jcuz"
+        # cls.contract_code = "9caNqTn78xJSjQjKeupTe7foASgqMjm8RooZaBR7h5SW"
         print("contract id: ", cls.owner_contract, solana2ether(cls.owner_contract).hex())
+        print("code id: ", cls.contract_code)
 
         cls.eth_caller = EthAccount.from_key(cls.acc.get_acc().secret_key())
         cls.sol_caller = cls.loader.ether2program(cls.eth_caller.address)[0]
@@ -64,6 +69,7 @@ class EvmLoaderTestsNewAccount(unittest.TestCase):
             ])).add(
             TransactionInstruction(program_id=self.evm_loader, data=bytearray.fromhex("05") + trx_data, keys=[
                 AccountMeta(pubkey=self.owner_contract, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=self.contract_code, is_signer=False, is_writable=True),
                 AccountMeta(pubkey=self.sol_caller, is_signer=False, is_writable=True),
                 AccountMeta(pubkey=PublicKey("Sysvar1nstructions1111111111111111111111111"), is_signer=False, is_writable=False),  
                 AccountMeta(pubkey=self.evm_loader, is_signer=False, is_writable=False),

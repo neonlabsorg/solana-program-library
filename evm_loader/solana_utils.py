@@ -183,7 +183,7 @@ class EvmLoader:
         trx = Transaction()
         seed = str(b58encode(bytes.fromhex(ether)))
         base = self.acc.get_acc().public_key()
-        trx.add(createAccountWithSeed(base, base, seed, 10**9, 65, PublicKey(self.loader_id)))
+        trx.add(createAccountWithSeed(base, base, seed, 10**9, 97, PublicKey(self.loader_id)))
         trx.add(TransactionInstruction(
             program_id=self.loader_id,
             data=bytes.fromhex('66000000')+CREATE_ACCOUNT_LAYOUT.build(dict(
@@ -231,14 +231,15 @@ class EvmLoader:
             fileHash = Web3.keccak(file.read())
             ether = bytes(Web3.keccak(b'\xff' + creator + bytes(32) + fileHash)[-20:])
         program = self.ether2programAddress(ether)
+        code = self.ether2programAddress(ether + str.encode("code"))
         info = http_client.get_account_info(program[0])
         if info['result']['value'] is None:
             res = self.deploy(location)
-            return (res['programId'], bytes.fromhex(res['ethereum'][2:]))
+            return (res['programId'], bytes.fromhex(res['ethereum'][2:]), res['codeId'])
         elif info['result']['value']['owner'] != self.loader_id:
             raise Exception("Invalid owner for account {}".format(program))
         else:
-            return (program[0], ether)
+            return (program[0], ether, code[0])
 
 
 def getBalance(account):

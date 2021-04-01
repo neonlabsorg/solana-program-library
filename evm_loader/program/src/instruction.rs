@@ -59,6 +59,34 @@ pub enum EvmInstruction<'a> {
         nonce: u8,
     },
 
+    CreateCodeAccount {
+        /// Number of lamports to transfer to the new account
+        lamports: u64,
+
+        /// Number of bytes of memory to allocate
+        space: u64,
+
+        /// Ethereum address of account
+        ether: H160,
+
+        /// Nonce for create valid program_address from ethereum address
+        nonce: u8,
+    },
+
+    CreateProgramAccount {
+        /// Number of lamports to transfer to the new account
+        lamports: u64,
+
+        /// Number of bytes of memory to allocate
+        space: u64,
+
+        /// Ethereum address of account
+        ether: H160,
+
+        /// Nonce for create valid program_address from ethereum address
+        nonce: u8,
+    },
+
     ///
     /// Create Ethereum account (create program_address account and write data)
     /// # Account references
@@ -177,6 +205,32 @@ impl<'a> EvmInstruction<'a> {
                 let (nonce, _rest) = rest.split_first().ok_or(InvalidInstructionData)?;
                 EvmInstruction::CreateAccount {lamports, space, ether, nonce: *nonce}
             },
+            22 => {
+                let (_, rest) = rest.split_at(3);
+                let (lamports, rest) = rest.split_at(8);
+                let (space, rest) = rest.split_at(8);
+
+                let lamports = lamports.try_into().ok().map(u64::from_le_bytes).ok_or(InvalidInstructionData)?;
+                let space = space.try_into().ok().map(u64::from_le_bytes).ok_or(InvalidInstructionData)?;
+
+                let (ether, rest) = rest.split_at(20);
+                let ether = H160::from_slice(&*ether); //ether.try_into().map_err(|_| InvalidInstructionData)?;
+                let (nonce, _rest) = rest.split_first().ok_or(InvalidInstructionData)?;
+                EvmInstruction::CreateProgramAccount {lamports, space, ether, nonce: *nonce}
+            },
+            33 => {
+                let (_, rest) = rest.split_at(3);
+                let (lamports, rest) = rest.split_at(8);
+                let (space, rest) = rest.split_at(8);
+
+                let lamports = lamports.try_into().ok().map(u64::from_le_bytes).ok_or(InvalidInstructionData)?;
+                let space = space.try_into().ok().map(u64::from_le_bytes).ok_or(InvalidInstructionData)?;
+
+                let (ether, rest) = rest.split_at(20);
+                let ether = H160::from_slice(&*ether); //ether.try_into().map_err(|_| InvalidInstructionData)?;
+                let (nonce, _rest) = rest.split_first().ok_or(InvalidInstructionData)?;
+                EvmInstruction::CreateCodeAccount {lamports, space, ether, nonce: *nonce}
+            },
             102 => {
                 let (_, rest) = rest.split_at(3);
                 let (lamports, rest) = rest.split_at(8);
@@ -256,15 +310,17 @@ impl<'a> EvmInstruction<'a> {
 pub fn on_return(
     myself_program_id: &Pubkey,
     status: u8,
-    mut result: Vec<u8>
+    result: Vec<u8>
 ) -> Result<Instruction, ProgramError> {
-    result.insert(0, status);
-    result.insert(0, 6u8);
+    let mut data = Vec::new();
+    data.insert(0, status);
+    data.insert(0, 6u8);
+    data.extend(result);
 
     Ok(Instruction {
         program_id: *myself_program_id,
         accounts: [].to_vec(),
-        data: result,
+        data: data,
     })
 }
 

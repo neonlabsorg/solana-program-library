@@ -61,9 +61,8 @@ impl<'a> SolidityAccount<'a> {
         if self.account_data.code_size > 0 && self.code_data.is_some() {
             let some_data = self.code_data.as_ref().unwrap();
             let data = some_data.borrow();
-            let offset = AccountData::SIZE;
             let code_size = self.account_data.code_size as usize;
-            f(&data[offset..offset + code_size])
+            f(&data[..code_size])
         } else {
             f(&[])
         }
@@ -82,12 +81,11 @@ impl<'a> SolidityAccount<'a> {
         }
         Err(ProgramError::UninitializedAccount)*/
         if self.account_data.code_size > 0 && self.code_data.is_some() {
-            let mut some_data = self.code_data.as_ref().unwrap();
+            let some_data = self.code_data.as_ref().unwrap();
             let mut data = some_data.borrow_mut();
             debug_print!("Storage data borrowed");
             let code_size = self.account_data.code_size as usize;
-            let offset = AccountData::SIZE + code_size;
-            let mut hamt = Hamt::new(&mut data[offset..], false)?;
+            let mut hamt = Hamt::new(&mut data[code_size..], false)?;
             Ok(f(&mut hamt))
         } else {
             Err(ProgramError::UninitializedAccount)

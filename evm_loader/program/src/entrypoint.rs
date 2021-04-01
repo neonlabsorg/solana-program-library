@@ -114,6 +114,56 @@ fn process_instruction<'a>(
 
     let result = match instruction {
         EvmInstruction::CreateAccount {lamports, space, ether, nonce} => {
+            debug_print!("CreateAccount");
+            let funding_info = next_account_info(account_info_iter)?;
+            let program_info = next_account_info(account_info_iter)?;
+
+            debug_print!(&("Ether:".to_owned()+&(hex::encode(ether))+" "+&hex::encode([nonce])));
+
+            let expected_address = Pubkey::create_program_address(&[ether.as_bytes(), &[nonce]], program_id)?;
+            if expected_address != *program_info.key {
+                return Err(ProgramError::InvalidArgument);
+            };
+
+            let program_seeds = [ether.as_bytes(), &[nonce]];
+            invoke_signed(
+                &create_account(funding_info.key, program_info.key, lamports, AccountData::SIZE as u64 + space, program_id),
+                &accounts, &[&program_seeds[..]]
+            )?;
+            debug_print!("create_account done");
+            
+            let mut data = program_info.data.borrow_mut();
+            let account_data = AccountData {ether, nonce, trx_count: 0u64, signer: *funding_info.key, code_account: Pubkey::new_from_array([0u8; 32]), code_size: 0u32};
+            account_data.pack(&mut data)?;
+            Ok(())
+        },
+        EvmInstruction::CreateCodeAccount {lamports, space, ether, nonce} => {
+            debug_print!("CreateAccount");
+            let funding_info = next_account_info(account_info_iter)?;
+            let program_code = next_account_info(account_info_iter)?;
+
+            let seeds_vec = [ether.as_bytes(), "code".as_bytes()].concat();
+            let seeds: &[u8] = seeds_vec.as_slice();
+            // let seeds = [ether.as_bytes(), "code".as_bytes()].concat();
+
+            debug_print!(&("Ether:".to_owned()+&(hex::encode(seeds))+" "+&hex::encode([nonce])));
+
+            let expected_address = Pubkey::create_program_address(&[seeds, &[nonce]], program_id)?;
+            if expected_address != *program_code.key {
+                return Err(ProgramError::InvalidArgument);
+            };
+
+            let program_seeds = [seeds, &[nonce]];
+            invoke_signed(
+                &create_account(funding_info.key, program_code.key, lamports, AccountData::SIZE as u64 + space, program_id),
+                &accounts, &[&program_seeds[..]]
+            )?;
+            debug_print!("create_account done");
+
+            Ok(())
+        },
+        EvmInstruction::CreateProgramAccount {lamports, space, ether, nonce} => {
+            debug_print!("CreateProgramAccount");
             let funding_info = next_account_info(account_info_iter)?;
             let program_info = next_account_info(account_info_iter)?;
             let program_code = next_account_info(account_info_iter)?;
@@ -135,12 +185,12 @@ fn process_instruction<'a>(
             let mut data = program_info.data.borrow_mut();
             let account_data = AccountData {ether, nonce, trx_count: 0u64, signer: *funding_info.key, code_account: *program_code.key, code_size: 0u32};
             account_data.pack(&mut data)?;
+
             Ok(())
         },
         EvmInstruction::CreateAccount2 {lamports, space, ether, nonce} => {
             let funding_info = next_account_info(account_info_iter)?;
             let program_info = next_account_info(account_info_iter)?;
-            let program_code = next_account_info(account_info_iter)?;
 
             debug_print!(&("Ether:".to_owned()+&(hex::encode(ether))+" "+&hex::encode([nonce])));
 
@@ -157,7 +207,7 @@ fn process_instruction<'a>(
             //debug_print!("create_account done");
             
             let mut data = program_info.data.borrow_mut();
-            let account_data = AccountData {ether, nonce, trx_count: 0u64, signer: *funding_info.key, code_account: *program_code.key, code_size: 0u32};
+            let account_data = AccountData {ether, nonce, trx_count: 0u64, signer: *funding_info.key, code_account: Pubkey::new_from_array([0u8; 32]), code_size: 0u32};
             account_data.pack(&mut data)?;
             Ok(())
         },
@@ -218,7 +268,7 @@ fn process_instruction<'a>(
             let (exit_reason, result, applies_logs) = {
                 let acc_storage = account_storage.borrow();
 
-                let caller = acc_storage.get_account_by_index(1).ok_or(ProgramError::InvalidArgument)?;  
+                let caller = acc_storage.get_caller_account().ok_or(ProgramError::InvalidArgument)?;  
                 if caller.get_nonce() != nonce {
                     debug_print!(&format!("Invalid nonce: actual {}, expect {}", nonce, caller.get_nonce()));
                     return Err(ProgramError::InvalidInstructionData);
@@ -466,9 +516,9 @@ fn do_finalize<'a>(program_id: &Pubkey, accounts: &'a [AccountInfo<'a>]) -> Prog
         return Err(ProgramError::InvalidArgument);
     }
 
-    let account_storage = RefCell::new(ProgramAccountStorage::new(program_id, accounts, accounts.last().unwrap())?);
+    let account_storage = RefCell::new(ProgramAccountStorage::new(program_id, accounts, clock_info)?);
 
-    let caller_ether = get_ether_address(program_id, account_storage.borrow().get_account_by_index(1), caller_info, signer_info, None).ok_or(ProgramError::InvalidArgument)?;
+    let caller_ether = get_ether_address(program_id, account_storage.borrow().get_caller_account(), caller_info, signer_info, None).ok_or(ProgramError::InvalidArgument)?;
     
     let (exit_reason, result, applies_logs) = {
         let backend = SolanaBackend::new(account_storage.borrow(), Some(accounts));
@@ -538,8 +588,8 @@ fn do_call<'a>(
     } else {
         caller_info
     };
-    // let sysvar_info = next_account_info(account_info_iter)?;
-    // let clock_info = next_account_info(account_info_iter)?;
+    let sysvar_info = next_account_info(account_info_iter)?;
+    let clock_info = next_account_info(account_info_iter)?;
 
     if program_info.owner != program_id {
         return Err(ProgramError::InvalidArgument);
@@ -550,8 +600,8 @@ fn do_call<'a>(
     let (caller_ether, contract_ether) = {
         let acc_storage = account_storage.borrow();
 
-        let caller_ether = get_ether_address(program_id, acc_storage.get_account_by_index(1), caller_info, signer_info, from_info).ok_or(ProgramError::InvalidArgument)?;
-        let contract_ether = acc_storage.get_account_by_index(0).ok_or(ProgramError::InvalidArgument)?.get_ether();
+        let caller_ether = get_ether_address(program_id, acc_storage.get_caller_account(), caller_info, signer_info, from_info).ok_or(ProgramError::InvalidArgument)?;
+        let contract_ether = acc_storage.get_contract_account().ok_or(ProgramError::InvalidArgument)?.get_ether();
 
         debug_print!(&("   caller: ".to_owned() + &caller_ether.0.to_string()));
         debug_print!(&(" contract: ".to_owned() + &contract_ether.to_string()));
