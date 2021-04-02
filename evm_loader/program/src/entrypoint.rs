@@ -31,6 +31,8 @@ use crate::{
     account_data::AccountData,
     solidity_account::SolidityAccount,
     transaction::{UnsignedTransaction, get_data, verify_tx_signature, make_secp256k1_instruction},
+    executor::{ Machine },
+    executor_state::{ ExecutorState, ExecutorMetadata }
 };
 
 use evm::{
@@ -41,7 +43,7 @@ use evm::{
 };
 use primitive_types::{H160, U256};
 
-use std::{alloc::Layout, mem::size_of, ptr::null_mut, usize};
+use std::{alloc::Layout, mem::size_of, ptr::null_mut, usize, rc::Rc};
 use solana_sdk::entrypoint::HEAP_START_ADDRESS;
 
 
@@ -52,19 +54,39 @@ fn keccak256_digest(data: &[u8]) -> H256 {
 }
 
 
-const HEAP_LENGTH: usize = 1024*1024;
+const HEAP_LENGTH: usize = 1024*1024 - 0x30000 - 0x30000;
 
-/// Developers can implement their own heap by defining their own
-/// `#[global_allocator]`.  The following implements a dummy for test purposes
-/// but can be flushed out with whatever the developer sees fit.
-pub struct BumpAllocator;
+
+struct BumpAllocator {
+    pub start: usize,
+    pub len: usize,
+}
 
 impl BumpAllocator {
-    /// Get occupied memory
+
+    pub fn new() -> BumpAllocator {
+        BumpAllocator{ start: HEAP_START_ADDRESS, len: HEAP_LENGTH }
+    }
+
+    pub fn switch_to_default_region(&mut self) {
+        self.start = HEAP_START_ADDRESS;
+        self.len = HEAP_LENGTH;
+    }
+
+    pub fn switch_to_evm_region_1(&mut self) {
+        self.start = HEAP_START_ADDRESS + HEAP_LENGTH;
+        self.len = 0x30000;
+    }
+
+    pub fn switch_to_evm_region_2(&mut self) {
+        self.start = HEAP_START_ADDRESS + HEAP_LENGTH + 0x30000;
+        self.len = 0x30000;
+    }
+
     #[inline]
     pub fn occupied() -> usize {
-        const POS_PTR: *mut usize = HEAP_START_ADDRESS as *mut usize;
-        const TOP_ADDRESS: usize = HEAP_START_ADDRESS + HEAP_LENGTH;
+        let POS_PTR: *mut usize = HEAP_START_ADDRESS as *mut usize;
+        let TOP_ADDRESS: usize = HEAP_START_ADDRESS + HEAP_LENGTH;
 
         let pos = unsafe{*POS_PTR};
         if pos == 0 {0} else {TOP_ADDRESS-pos}
@@ -72,28 +94,27 @@ impl BumpAllocator {
 }
 
 unsafe impl std::alloc::GlobalAlloc for BumpAllocator {
+
     #[inline]
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        const POS_PTR: *mut usize = HEAP_START_ADDRESS as *mut usize;
-        const TOP_ADDRESS: usize = HEAP_START_ADDRESS + HEAP_LENGTH;
-        const BOTTOM_ADDRESS: usize = HEAP_START_ADDRESS + size_of::<*mut u8>();
+        let pos_ptr = self.start as *mut usize;
 
-        let mut pos = *POS_PTR;
+        let mut pos = *pos_ptr;
         if pos == 0 {
             // First time, set starting position
-            pos = TOP_ADDRESS;
+            pos = self.start + self.len;
         }
         pos = pos.saturating_sub(layout.size());
-        pos &= !(layout.align().saturating_sub(1));
-        if pos < BOTTOM_ADDRESS {
+        pos &= !(layout.align().wrapping_sub(1));
+        if pos < self.start + size_of::<*mut u8>() {
             return null_mut();
         }
-
-        *POS_PTR = pos;
+        *pos_ptr = pos;
         pos as *mut u8
     }
+
     #[inline]
-    unsafe fn dealloc(&self, _: *mut u8, _layout: Layout) {
+    unsafe fn dealloc(&self, _: *mut u8, _: Layout) {
         // I'm a bump allocator, I don't free
     }
 }
@@ -101,7 +122,7 @@ unsafe impl std::alloc::GlobalAlloc for BumpAllocator {
 
 #[cfg(target_arch = "bpf")]
 #[global_allocator]
-static mut A: BumpAllocator = BumpAllocator;
+static mut allocator: BumpAllocator = BumpAllocator{ start: HEAP_START_ADDRESS, len: HEAP_LENGTH };
 
 // Is't need to save for account:
 // 1. ether: [u8;20]
@@ -530,33 +551,51 @@ fn do_call<'a>(
         return Err(ProgramError::InvalidArgument);
     }
 
-    let mut backend = SolanaBackend::new(program_id, accounts, accounts.last().unwrap())?;
+    // allocator.switch_to_evm_region_1();
+    let mut backend = Rc::new(SolanaBackend::new(program_id, accounts, accounts.last().unwrap())?);
     debug_print!("  backend initialized");
 
     let caller_ether = get_ether_address(program_id, backend.get_account_by_index(1), caller_info, signer_info, from_info).ok_or(ProgramError::InvalidArgument)?;
 
-    let config = evm::Config::istanbul();
-    let mut executor = StackExecutor::new(&backend, usize::max_value(), &config);
+    let config = Box::new(evm::Config::istanbul());
+    let executor_state = ExecutorState::new(ExecutorMetadata::new(), backend.clone());
+    let mut executor = Machine::new(executor_state, &config);
+
     debug_print!("Executor initialized");
     let contract = backend.get_account_by_index(0).ok_or(ProgramError::InvalidArgument)?;
 
     debug_print!(&("   caller: ".to_owned() + &caller_ether.0.to_string()));
     debug_print!(&(" contract: ".to_owned() + &contract.get_ether().to_string()));
 
-    let (exit_reason, result) = executor.transact_call(
-            caller_ether.0,
-            contract.get_ether(),
-            U256::zero(),
-            instruction_data.to_vec(),
-            usize::max_value()
-        );
+    executor.call_begin(caller_ether.0, contract.get_ether(), instruction_data.to_vec(), u64::max_value());
 
-    debug_print!("Call done");
+    for i in 0..100 {
+        executor.step();
+    }
+
+    let raw_ptr = Box::into_raw(executor);
+    let mut executor = Machine::restore(raw_ptr);
+
+
+    let mut exit_reason = ExitReason::Fatal(ExitFatal::NotSupported);
+    loop {
+        if let Err(reason) = executor.step() {
+            exit_reason = reason;
+            break;
+        }
+    }
+    let result = executor.return_value();
+
+
+    // debug_print!("Call done");
     
     if exit_reason.is_succeed() {
         debug_print!("Succeed execution");
-        let (applies, logs) = executor.deconstruct();
-        backend.apply(applies,false, Some(caller_ether))?;
+        let executor_state = executor.into_state();
+        let mut backend = executor_state.backend();
+
+        let (applies, logs) = executor_state.deconstruct();
+        Rc::get_mut(&mut backend).unwrap().apply(applies,false, Some(caller_ether))?;
         debug_print!("Applies done");
         for log in logs {
             invoke(&on_event(program_id, log)?, &accounts)?;
