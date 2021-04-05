@@ -569,14 +569,6 @@ fn do_call<'a>(
 
     executor.call_begin(caller_ether.0, contract.get_ether(), instruction_data.to_vec(), u64::max_value());
 
-    for i in 0..100 {
-        executor.step();
-    }
-
-    let raw_ptr = Box::into_raw(executor);
-    let mut executor = Machine::restore(raw_ptr);
-
-
     let mut exit_reason = ExitReason::Fatal(ExitFatal::NotSupported);
     loop {
         if let Err(reason) = executor.step() {
@@ -587,12 +579,11 @@ fn do_call<'a>(
     let result = executor.return_value();
 
 
-    // debug_print!("Call done");
+    debug_print!("Call done");
     
     if exit_reason.is_succeed() {
         debug_print!("Succeed execution");
         let executor_state = executor.into_state();
-        let mut backend = executor_state.backend();
 
         let (applies, logs) = executor_state.deconstruct();
         Rc::get_mut(&mut backend).unwrap().apply(applies,false, Some(caller_ether))?;
