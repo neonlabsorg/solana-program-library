@@ -5,6 +5,7 @@ module.exports = {
     browser: true,
     es6: true,
     node: true,
+    mocha: true,
   },
   extends: [
     'eslint:recommended',
@@ -53,4 +54,24 @@ module.exports = {
       version: 'detect',
     },
   },
+  overrides: [
+    {
+      files: ['*.js'],
+      plugins: ['flowtype'],
+      extends: ['plugin:flowtype/recommended'],
+      rules: {
+        'flowtype/no-types-missing-file-annotation': 'off',
+        'flowtype/generic-spacing': [0],
+      },
+    },
+    {
+      files: ['*.d.ts'],
+      parser: '@typescript-eslint/parser',
+      plugins: ['@typescript-eslint'],
+      rules: {
+        'no-unused-vars': 'off',
+        '@typescript-eslint/no-unused-vars': ['error'],
+      },
+    },
+  ],
 };

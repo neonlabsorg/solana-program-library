@@ -9,18 +9,25 @@ import {
   BPF_LOADER_PROGRAM_ID,
 } from '@solana/web3.js';
 
-import {Token, NATIVE_MINT} from '../client/token';
+import {
+  Token,
+  TOKEN_PROGRAM_ID,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  NATIVE_MINT,
+} from '../client/token';
 import {url} from '../url';
 import {newAccountWithLamports} from '../client/util/new-account-with-lamports';
 import {sleep} from '../client/util/sleep';
-import {Store} from '../client/util/store';
+import {Store} from './store';
 
 // Loaded token program's program id
 let programId: PublicKey;
+let associatedProgramId: PublicKey;
 
 // Accounts setup in createMint and used by all subsequent tests
 let testMintAuthority: Account;
 let testToken: Token;
+let testTokenDecimals: number = 2;
 
 // Accounts setup in createAccount and used by all subsequent tests
 let testAccountOwner: Account;
@@ -78,43 +85,60 @@ async function loadProgram(
   return program_account.publicKey;
 }
 
-async function GetPrograms(connection: Connection): Promise<PublicKey> {
+async function GetPrograms(connection: Connection): Promise<void> {
   const programVersion = process.env.PROGRAM_VERSION;
   if (programVersion) {
     switch (programVersion) {
       case '2.0.4':
-        return new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
+        programId = TOKEN_PROGRAM_ID;
+        associatedProgramId = ASSOCIATED_TOKEN_PROGRAM_ID;
+        return;
       default:
         throw new Error('Unknown program version');
     }
   }
 
   const store = new Store();
-  let tokenProgramId = null;
   try {
     const config = await store.load('config.json');
-    console.log('Using pre-loaded Token program');
+    console.log('Using pre-loaded Token programs');
     console.log(
-      '  Note: To reload program remove client/util/store/config.json',
+      `  Note: To reload program remove ${Store.getFilename('config.json')}`,
     );
-    tokenProgramId = new PublicKey(config.tokenProgramId);
+    programId = new PublicKey(config.tokenProgramId);
+    associatedProgramId = new PublicKey(config.associatedTokenProgramId);
+    let info;
+    info = await connection.getAccountInfo(programId);
+    assert(info != null);
+    info = await connection.getAccountInfo(associatedProgramId);
+    assert(info != null);
   } catch (err) {
-    tokenProgramId = await loadProgram(
+    console.log(
+      'Checking pre-loaded Token programs failed, will load new programs:',
+    );
+    console.log({err});
+
+    programId = await loadProgram(
       connection,
       '../../target/bpfel-unknown-unknown/release/spl_token.so',
     );
+    associatedProgramId = await loadProgram(
+      connection,
+      '../../target/bpfel-unknown-unknown/release/spl_associated_token_account.so',
+    );
     await store.save('config.json', {
-      tokenProgramId: tokenProgramId.toString(),
+      tokenProgramId: programId.toString(),
+      associatedTokenProgramId: associatedProgramId.toString(),
     });
   }
-  return tokenProgramId;
 }
 
 export async function loadTokenProgram(): Promise<void> {
   const connection = await getConnection();
-  programId = await GetPrograms(connection);
+  await GetPrograms(connection);
 
   console.log('Token Program ID', programId.toString());
+  console.log('Associated Token Program ID', associatedProgramId.toString());
 }
 
 export async function createMint(): Promise<void> {
@@ -126,9 +150,12 @@ export async function createMint(): Promise<void> {
     payer,
     testMintAuthority.publicKey,
     testMintAuthority.publicKey,
-    2,
+    testTokenDecimals,
     programId,
   );
+  // HACK: override hard-coded ASSOCIATED_TOKEN_PROGRAM_ID with corresponding
+  // custom test fixture
+  testToken.associatedProgramId = associatedProgramId;
 
   const mintInfo = await testToken.getMintInfo();
   if (mintInfo.mintAuthority !== null) {
@@ -137,7 +164,7 @@ export async function createMint(): Promise<void> {
     assert(mintInfo.mintAuthority !== null);
   }
   assert(mintInfo.supply.toNumber() === 0);
-  assert(mintInfo.decimals === 2);
+  assert(mintInfo.decimals === testTokenDecimals);
   assert(mintInfo.isInitialized === true);
   if (mintInfo.freezeAuthority !== null) {
     assert(mintInfo.freezeAuthority.equals(testMintAuthority.publicKey));
@@ -160,6 +187,48 @@ export async function createAccount(): Promise<void> {
   assert(accountInfo.isNative === false);
   assert(accountInfo.rentExemptReserve === null);
   assert(accountInfo.closeAuthority === null);
+
+  // you can create as many accounts as with same owner
+  const testAccount2 = await testToken.createAccount(
+    testAccountOwner.publicKey,
+  );
+  assert(!testAccount2.equals(testAccount));
+}
+
+export async function createAssociatedAccount(): Promise<void> {
+  let info;
+  const connection = await getConnection();
+
+  const owner = new Account();
+  const associatedAddress = await Token.getAssociatedTokenAddress(
+    associatedProgramId,
+    programId,
+    testToken.publicKey,
+    owner.publicKey,
+  );
+
+  // associated account shouldn't exist
+  info = await connection.getAccountInfo(associatedAddress);
+  assert(info == null);
+
+  const createdAddress = await testToken.createAssociatedTokenAccount(
+    owner.publicKey,
+  );
+  assert(createdAddress.equals(associatedAddress));
+
+  // associated account should exist now
+  info = await testToken.getAccountInfo(associatedAddress);
+  assert(info != null);
+  assert(info.mint.equals(testToken.publicKey));
+  assert(info.owner.equals(owner.publicKey));
+  assert(info.amount.toNumber() === 0);
+
+  // creating again should cause TX error for the associated token account
+  assert(
+    await didThrow(testToken, testToken.createAssociatedTokenAccount, [
+      owner.publicKey,
+    ]),
+  );
 }
 
 export async function mintTo(): Promise<void> {
@@ -172,9 +241,9 @@ export async function mintTo(): Promise<void> {
   assert(accountInfo.amount.toNumber() === 1000);
 }
 
-export async function mintTo2(): Promise<void> {
+export async function mintToChecked(): Promise<void> {
   assert(
-    await didThrow(testToken, testToken.mintTo2, [
+    await didThrow(testToken, testToken.mintToChecked, [
       testAccount,
       testMintAuthority,
       [],
@@ -183,7 +252,7 @@ export async function mintTo2(): Promise<void> {
     ]),
   );
 
-  await testToken.mintTo2(testAccount, testMintAuthority, [], 1000, 2);
+  await testToken.mintToChecked(testAccount, testMintAuthority, [], 1000, 2);
 
   const mintInfo = await testToken.getMintInfo();
   assert(mintInfo.supply.toNumber() === 2000);
@@ -208,22 +277,29 @@ export async function transfer(): Promise<void> {
   assert(testAccountInfo.amount.toNumber() === 1900);
 }
 
-export async function transfer2(): Promise<void> {
+export async function transferChecked(): Promise<void> {
   const destOwner = new Account();
   const dest = await testToken.createAccount(destOwner.publicKey);
 
   assert(
-    await didThrow(testToken, testToken.transfer2, [
+    await didThrow(testToken, testToken.transferChecked, [
       testAccount,
       dest,
       testAccountOwner,
       [],
       100,
-      1,
+      testTokenDecimals - 1,
     ]),
   );
 
-  await testToken.transfer2(testAccount, dest, testAccountOwner, [], 100, 2);
+  await testToken.transferChecked(
+    testAccount,
+    dest,
+    testAccountOwner,
+    [],
+    100,
+    testTokenDecimals,
+  );
 
   const mintInfo = await testToken.getMintInfo();
   assert(mintInfo.supply.toNumber() === 2000);
@@ -233,6 +309,26 @@ export async function transfer2(): Promise<void> {
 
   let testAccountInfo = await testToken.getAccountInfo(testAccount);
   assert(testAccountInfo.amount.toNumber() === 1800);
+}
+
+export async function transferCheckedAssociated(): Promise<void> {
+  const dest = new Account().publicKey;
+  let associatedAccount;
+
+  associatedAccount = await testToken.getOrCreateAssociatedAccountInfo(dest);
+  assert(associatedAccount.amount.toNumber() === 0);
+
+  await testToken.transferChecked(
+    testAccount,
+    associatedAccount.address,
+    testAccountOwner,
+    [],
+    123,
+    testTokenDecimals,
+  );
+
+  associatedAccount = await testToken.getOrCreateAssociatedAccountInfo(dest);
+  assert(associatedAccount.amount.toNumber() === 123);
 }
 
 export async function approveRevoke(): Promise<void> {
@@ -337,12 +433,12 @@ export async function burn(): Promise<void> {
   assert(accountInfo.amount.toNumber() == amount - 1);
 }
 
-export async function burn2(): Promise<void> {
+export async function burnChecked(): Promise<void> {
   let accountInfo = await testToken.getAccountInfo(testAccount);
   const amount = accountInfo.amount.toNumber();
 
   assert(
-    await didThrow(testToken, testToken.burn2, [
+    await didThrow(testToken, testToken.burnChecked, [
       testAccount,
       testAccountOwner,
       [],
@@ -351,7 +447,7 @@ export async function burn2(): Promise<void> {
     ]),
   );
 
-  await testToken.burn2(testAccount, testAccountOwner, [], 1, 2);
+  await testToken.burnChecked(testAccount, testAccountOwner, [], 1, 2);
 
   accountInfo = await testToken.getAccountInfo(testAccount);
   assert(accountInfo.amount.toNumber() == amount - 1);

@@ -2,13 +2,25 @@
  * Flow Library definition for spl-token
  *
  * This file is manually maintained
- *
  */
 
+import BN from 'bn.js'; // eslint-disable-line
+import {Buffer} from 'buffer';
+import {Layout} from 'buffer-layout';
+import {
+  Account,
+  Connection,
+  PublicKey,
+  TransactionInstruction,
+} from '@solana/web3.js';
+import type {TransactionSignature} from '@solana/web3.js';
+
 declare module '@solana/spl-token' {
+  declare export var TOKEN_PROGRAM_ID;
+  declare export var ASSOCIATED_TOKEN_PROGRAM_ID;
   declare export class u64 extends BN {
-    toBuffer(): Buffer;
-    static fromBuffer(buffer: Buffer): u64;
+    toBuffer(): typeof Buffer;
+    static fromBuffer(buffer: typeof Buffer): u64;
   }
   declare export type AuthorityType =
     | 'MintTokens'
@@ -16,7 +28,7 @@ declare module '@solana/spl-token' {
     | 'AccountOwner'
     | 'CloseAccount';
   declare export var NATIVE_MINT: PublicKey;
-  declare export var MintLayout: Layout;
+  declare export var MintLayout: typeof Layout;
   declare export type MintInfo = {|
     mintAuthority: null | PublicKey,
     supply: u64,
@@ -24,8 +36,9 @@ declare module '@solana/spl-token' {
     isInitialized: boolean,
     freezeAuthority: null | PublicKey,
   |};
-  declare export var AccountLayout: Layout;
+  declare export var AccountLayout: typeof Layout;
   declare export type AccountInfo = {|
+    address: PublicKey,
     mint: PublicKey,
     owner: PublicKey,
     amount: u64,
@@ -54,12 +67,31 @@ declare module '@solana/spl-token' {
     signer11: PublicKey,
   |};
   declare export class Token {
+    publicKey: PublicKey;
+    programId: PublicKey;
+    associatedProgramId: PublicKey;
+    payer: Account;
     constructor(
       connection: Connection,
       publicKey: PublicKey,
       programId: PublicKey,
       payer: Account,
     ): Token;
+    static getMinBalanceRentForExemptMint(
+      connection: Connection,
+    ): Promise<number>;
+    static getMinBalanceRentForExemptAccount(
+      connection: Connection,
+    ): Promise<number>;
+    static getMinBalanceRentForExemptMultisig(
+      connection: Connection,
+    ): Promise<number>;
+    static getAssociatedTokenAddress(
+      associatedProgramId: PublicKey,
+      programId: PublicKey,
+      mint: PublicKey,
+      owner: PublicKey,
+    ): Promise<PublicKey>;
     static createMint(
       connection: Connection,
       payer: Account,
@@ -68,8 +100,8 @@ declare module '@solana/spl-token' {
       decimals: number,
       programId: PublicKey,
     ): Promise<Token>;
-    static getAccount(connection: Connection): Promise<Account>;
     createAccount(owner: PublicKey): Promise<PublicKey>;
+    createAssociatedTokenAccount(owner: PublicKey): Promise<PublicKey>;
     static createWrappedNativeAccount(
       connection: Connection,
       programId: PublicKey,
@@ -80,6 +112,7 @@ declare module '@solana/spl-token' {
     createMultisig(m: number, signers: Array<PublicKey>): Promise<PublicKey>;
     getMintInfo(): Promise<MintInfo>;
     getAccountInfo(account: PublicKey): Promise<AccountInfo>;
+    getOrCreateAssociatedAccountInfo(owner: PublicKey): Promise<AccountInfo>;
     getMultisigInfo(multisig: PublicKey): Promise<MultisigInfo>;
     transfer(
       source: PublicKey,
@@ -118,6 +151,16 @@ declare module '@solana/spl-token' {
       owner: Account | PublicKey,
       multiSigners: Array<Account>,
       amount: number | u64,
+    ): Promise<void>;
+    freezeAccount(
+      account: PublicKey,
+      authority: any,
+      multiSigners: Array<Account>,
+    ): Promise<void>;
+    thawAccount(
+      account: PublicKey,
+      authority: any,
+      multiSigners: Array<Account>,
     ): Promise<void>;
     closeAccount(
       account: PublicKey,
@@ -164,6 +207,7 @@ declare module '@solana/spl-token' {
       programId: PublicKey,
       account: PublicKey,
       newAuthority: PublicKey | null,
+      authorityType: AuthorityType,
       authority: PublicKey,
       multiSigners: Array<Account>,
     ): TransactionInstruction;
@@ -189,6 +233,28 @@ declare module '@solana/spl-token' {
       dest: PublicKey,
       authority: PublicKey,
       multiSigners: Array<Account>,
+    ): TransactionInstruction;
+    static createFreezeAccountInstruction(
+      programId: PublicKey,
+      account: PublicKey,
+      mint: PublicKey,
+      authority: PublicKey,
+      multiSigners: Array<Account>,
+    ): TransactionInstruction;
+    static createThawAccountInstruction(
+      programId: PublicKey,
+      account: PublicKey,
+      mint: PublicKey,
+      authority: PublicKey,
+      multiSigners: Array<Account>,
+    ): TransactionInstruction;
+    static createAssociatedTokenAccountInstruction(
+      associatedProgramId: PublicKey,
+      programId: PublicKey,
+      mint: PublicKey,
+      associatedAccount: PublicKey,
+      owner: PublicKey,
+      payer: PublicKey,
     ): TransactionInstruction;
   }
 }
