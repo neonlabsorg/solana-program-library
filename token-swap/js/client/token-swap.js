@@ -4,6 +4,7 @@
 
 import assert from 'assert';
 import BN from 'bn.js';
+import {Buffer} from 'buffer';
 import * as BufferLayout from 'buffer-layout';
 import type {Connection, TransactionSignature} from '@solana/web3.js';
 import {
@@ -17,6 +18,10 @@ import {
 import * as Layout from './layout';
 import {sendAndConfirmTransaction} from './util/send-and-confirm-transaction';
 import {loadAccount} from './util/account';
+
+export const TOKEN_SWAP_PROGRAM_ID: PublicKey = new PublicKey(
+  'SwaPpA9LAaLfeLi3a68M4DjnLqgtticKg6CnyNwgAC8',
+);
 
 /**
  * Some amount of tokens
@@ -43,7 +48,7 @@ export class Numberu64 extends BN {
    */
   static fromBuffer(buffer: typeof Buffer): Numberu64 {
     assert(buffer.length === 8, `Invalid buffer length: ${buffer.length}`);
-    return new BN(
+    return new Numberu64(
       [...buffer]
         .reverse()
         .map(i => `00${i.toString(16)}`.slice(-2))
@@ -58,16 +63,34 @@ export class Numberu64 extends BN {
  */
 export const TokenSwapLayout: typeof BufferLayout.Structure = BufferLayout.struct(
   [
+    BufferLayout.u8('version'),
     BufferLayout.u8('isInitialized'),
     BufferLayout.u8('nonce'),
     Layout.publicKey('tokenProgramId'),
     Layout.publicKey('tokenAccountA'),
     Layout.publicKey('tokenAccountB'),
     Layout.publicKey('tokenPool'),
-    Layout.uint64('feeNumerator'),
-    Layout.uint64('feeDenominator'),
+    Layout.publicKey('mintA'),
+    Layout.publicKey('mintB'),
+    Layout.publicKey('feeAccount'),
+    Layout.uint64('tradeFeeNumerator'),
+    Layout.uint64('tradeFeeDenominator'),
+    Layout.uint64('ownerTradeFeeNumerator'),
+    Layout.uint64('ownerTradeFeeDenominator'),
+    Layout.uint64('ownerWithdrawFeeNumerator'),
+    Layout.uint64('ownerWithdrawFeeDenominator'),
+    Layout.uint64('hostFeeNumerator'),
+    Layout.uint64('hostFeeDenominator'),
+    BufferLayout.u8('curveType'),
+    BufferLayout.blob(32, 'curveParameters'),
   ],
 );
+
+export const CurveType = Object.freeze({
+  ConstantProduct: 0, // Constant product curve, Uniswap-style
+  ConstantPrice: 1, // Constant price curve, always X amount of A token for 1 B token, where X is defined at init
+  Offset: 3, // Offset curve, like Uniswap, but with an additional offset on the token B side
+});
 
 /**
  * A program to exchange tokens against a pool of liquidity
@@ -99,6 +122,11 @@ export class TokenSwap {
   poolToken: PublicKey;
 
   /**
+   * The public key for the fee account receiving trade and/or withdrawal fees
+   */
+  feeAccount: PublicKey;
+
+  /**
    * Authority
    */
   authority: PublicKey;
@@ -114,14 +142,59 @@ export class TokenSwap {
   tokenAccountB: PublicKey;
 
   /**
-   * Fee numerator
+   * The public key for the mint of the first token account of the trading pair
    */
-  feeNumerator: Numberu64;
+  mintA: PublicKey;
 
   /**
-   * Fee denominator
+   * The public key for the mint of the second token account of the trading pair
    */
-  feeDenominator: Numberu64;
+  mintB: PublicKey;
+
+  /**
+   * Trading fee numerator
+   */
+  tradeFeeNumerator: Numberu64;
+
+  /**
+   * Trading fee denominator
+   */
+  tradeFeeDenominator: Numberu64;
+
+  /**
+   * Owner trading fee numerator
+   */
+  ownerTradeFeeNumerator: Numberu64;
+
+  /**
+   * Owner trading fee denominator
+   */
+  ownerTradeFeeDenominator: Numberu64;
+
+  /**
+   * Owner withdraw fee numerator
+   */
+  ownerWithdrawFeeNumerator: Numberu64;
+
+  /**
+   * Owner withdraw fee denominator
+   */
+  ownerWithdrawFeeDenominator: Numberu64;
+
+  /**
+   * Host trading fee numerator
+   */
+  hostFeeNumerator: Numberu64;
+
+  /**
+   * Host trading fee denominator
+   */
+  hostFeeDenominator: Numberu64;
+
+  /**
+   * CurveType, current options are:
+   */
+  curveType: number;
 
   /**
    * Fee payer
@@ -147,11 +220,21 @@ export class TokenSwap {
     swapProgramId: PublicKey,
     tokenProgramId: PublicKey,
     poolToken: PublicKey,
+    feeAccount: PublicKey,
     authority: PublicKey,
     tokenAccountA: PublicKey,
     tokenAccountB: PublicKey,
-    feeNumerator: Numberu64,
-    feeDenominator: Numberu64,
+    mintA: PublicKey,
+    mintB: PublicKey,
+    tradeFeeNumerator: Numberu64,
+    tradeFeeDenominator: Numberu64,
+    ownerTradeFeeNumerator: Numberu64,
+    ownerTradeFeeDenominator: Numberu64,
+    ownerWithdrawFeeNumerator: Numberu64,
+    ownerWithdrawFeeDenominator: Numberu64,
+    hostFeeNumerator: Numberu64,
+    hostFeeDenominator: Numberu64,
+    curveType: number,
     payer: Account,
   ) {
     Object.assign(this, {
@@ -160,11 +243,21 @@ export class TokenSwap {
       swapProgramId,
       tokenProgramId,
       poolToken,
+      feeAccount,
       authority,
       tokenAccountA,
       tokenAccountB,
-      feeNumerator,
-      feeDenominator,
+      mintA,
+      mintB,
+      tradeFeeNumerator,
+      tradeFeeDenominator,
+      ownerTradeFeeNumerator,
+      ownerTradeFeeDenominator,
+      ownerWithdrawFeeNumerator,
+      ownerWithdrawFeeDenominator,
+      hostFeeNumerator,
+      hostFeeDenominator,
+      curveType,
       payer,
     });
   }
@@ -185,15 +278,23 @@ export class TokenSwap {
   static createInitSwapInstruction(
     tokenSwapAccount: Account,
     authority: PublicKey,
-    nonce: number,
     tokenAccountA: PublicKey,
     tokenAccountB: PublicKey,
     tokenPool: PublicKey,
+    feeAccount: PublicKey,
     tokenAccountPool: PublicKey,
     tokenProgramId: PublicKey,
     swapProgramId: PublicKey,
-    feeNumerator: number,
-    feeDenominator: number,
+    nonce: number,
+    tradeFeeNumerator: number,
+    tradeFeeDenominator: number,
+    ownerTradeFeeNumerator: number,
+    ownerTradeFeeDenominator: number,
+    ownerWithdrawFeeNumerator: number,
+    ownerWithdrawFeeDenominator: number,
+    hostFeeNumerator: number,
+    hostFeeDenominator: number,
+    curveType: number,
   ): TransactionInstruction {
     const keys = [
       {pubkey: tokenSwapAccount.publicKey, isSigner: false, isWritable: true},
@@ -201,23 +302,39 @@ export class TokenSwap {
       {pubkey: tokenAccountA, isSigner: false, isWritable: false},
       {pubkey: tokenAccountB, isSigner: false, isWritable: false},
       {pubkey: tokenPool, isSigner: false, isWritable: true},
+      {pubkey: feeAccount, isSigner: false, isWritable: false},
       {pubkey: tokenAccountPool, isSigner: false, isWritable: true},
       {pubkey: tokenProgramId, isSigner: false, isWritable: false},
     ];
     const commandDataLayout = BufferLayout.struct([
       BufferLayout.u8('instruction'),
-      BufferLayout.nu64('feeNumerator'),
-      BufferLayout.nu64('feeDenominator'),
       BufferLayout.u8('nonce'),
+      BufferLayout.nu64('tradeFeeNumerator'),
+      BufferLayout.nu64('tradeFeeDenominator'),
+      BufferLayout.nu64('ownerTradeFeeNumerator'),
+      BufferLayout.nu64('ownerTradeFeeDenominator'),
+      BufferLayout.nu64('ownerWithdrawFeeNumerator'),
+      BufferLayout.nu64('ownerWithdrawFeeDenominator'),
+      BufferLayout.nu64('hostFeeNumerator'),
+      BufferLayout.nu64('hostFeeDenominator'),
+      BufferLayout.u8('curveType'),
+      BufferLayout.blob(32, 'curveParameters'),
     ]);
     let data = Buffer.alloc(1024);
     {
       const encodeLength = commandDataLayout.encode(
         {
           instruction: 0, // InitializeSwap instruction
-          feeNumerator,
-          feeDenominator,
           nonce,
+          tradeFeeNumerator,
+          tradeFeeDenominator,
+          ownerTradeFeeNumerator,
+          ownerTradeFeeDenominator,
+          ownerWithdrawFeeNumerator,
+          ownerWithdrawFeeDenominator,
+          hostFeeNumerator,
+          hostFeeDenominator,
+          curveType,
         },
         data,
       );
@@ -248,12 +365,38 @@ export class TokenSwap {
     );
 
     const poolToken = new PublicKey(tokenSwapData.tokenPool);
+    const feeAccount = new PublicKey(tokenSwapData.feeAccount);
     const tokenAccountA = new PublicKey(tokenSwapData.tokenAccountA);
     const tokenAccountB = new PublicKey(tokenSwapData.tokenAccountB);
+    const mintA = new PublicKey(tokenSwapData.mintA);
+    const mintB = new PublicKey(tokenSwapData.mintB);
     const tokenProgramId = new PublicKey(tokenSwapData.tokenProgramId);
 
-    const feeNumerator = Numberu64.fromBuffer(tokenSwapData.feeNumerator);
-    const feeDenominator = Numberu64.fromBuffer(tokenSwapData.feeDenominator);
+    const tradeFeeNumerator = Numberu64.fromBuffer(
+      tokenSwapData.tradeFeeNumerator,
+    );
+    const tradeFeeDenominator = Numberu64.fromBuffer(
+      tokenSwapData.tradeFeeDenominator,
+    );
+    const ownerTradeFeeNumerator = Numberu64.fromBuffer(
+      tokenSwapData.ownerTradeFeeNumerator,
+    );
+    const ownerTradeFeeDenominator = Numberu64.fromBuffer(
+      tokenSwapData.ownerTradeFeeDenominator,
+    );
+    const ownerWithdrawFeeNumerator = Numberu64.fromBuffer(
+      tokenSwapData.ownerWithdrawFeeNumerator,
+    );
+    const ownerWithdrawFeeDenominator = Numberu64.fromBuffer(
+      tokenSwapData.ownerWithdrawFeeDenominator,
+    );
+    const hostFeeNumerator = Numberu64.fromBuffer(
+      tokenSwapData.hostFeeNumerator,
+    );
+    const hostFeeDenominator = Numberu64.fromBuffer(
+      tokenSwapData.hostFeeDenominator,
+    );
+    const curveType = tokenSwapData.curveType;
 
     return new TokenSwap(
       connection,
@@ -261,11 +404,21 @@ export class TokenSwap {
       programId,
       tokenProgramId,
       poolToken,
+      feeAccount,
       authority,
       tokenAccountA,
       tokenAccountB,
-      feeNumerator,
-      feeDenominator,
+      mintA,
+      mintB,
+      tradeFeeNumerator,
+      tradeFeeDenominator,
+      ownerTradeFeeNumerator,
+      ownerTradeFeeDenominator,
+      ownerWithdrawFeeNumerator,
+      ownerWithdrawFeeDenominator,
+      hostFeeNumerator,
+      hostFeeDenominator,
+      curveType,
       payer,
     );
   }
@@ -293,15 +446,25 @@ export class TokenSwap {
     payer: Account,
     tokenSwapAccount: Account,
     authority: PublicKey,
-    nonce: number,
     tokenAccountA: PublicKey,
     tokenAccountB: PublicKey,
     poolToken: PublicKey,
+    mintA: PublicKey,
+    mintB: PublicKey,
+    feeAccount: PublicKey,
     tokenAccountPool: PublicKey,
     swapProgramId: PublicKey,
     tokenProgramId: PublicKey,
-    feeNumerator: number,
-    feeDenominator: number,
+    nonce: number,
+    tradeFeeNumerator: number,
+    tradeFeeDenominator: number,
+    ownerTradeFeeNumerator: number,
+    ownerTradeFeeDenominator: number,
+    ownerWithdrawFeeNumerator: number,
+    ownerWithdrawFeeDenominator: number,
+    hostFeeNumerator: number,
+    hostFeeDenominator: number,
+    curveType: number,
   ): Promise<TokenSwap> {
     let transaction;
     const tokenSwap = new TokenSwap(
@@ -310,11 +473,21 @@ export class TokenSwap {
       swapProgramId,
       tokenProgramId,
       poolToken,
+      feeAccount,
       authority,
       tokenAccountA,
       tokenAccountB,
-      new Numberu64(feeNumerator),
-      new Numberu64(feeDenominator),
+      mintA,
+      mintB,
+      new Numberu64(tradeFeeNumerator),
+      new Numberu64(tradeFeeDenominator),
+      new Numberu64(ownerTradeFeeNumerator),
+      new Numberu64(ownerTradeFeeDenominator),
+      new Numberu64(ownerWithdrawFeeNumerator),
+      new Numberu64(ownerWithdrawFeeDenominator),
+      new Numberu64(hostFeeNumerator),
+      new Numberu64(hostFeeDenominator),
+      curveType,
       payer,
     );
 
@@ -336,15 +509,23 @@ export class TokenSwap {
     const instruction = TokenSwap.createInitSwapInstruction(
       tokenSwapAccount,
       authority,
-      nonce,
       tokenAccountA,
       tokenAccountB,
       poolToken,
+      feeAccount,
       tokenAccountPool,
       tokenProgramId,
       swapProgramId,
-      feeNumerator,
-      feeDenominator,
+      nonce,
+      tradeFeeNumerator,
+      tradeFeeDenominator,
+      ownerTradeFeeNumerator,
+      ownerTradeFeeDenominator,
+      ownerWithdrawFeeNumerator,
+      ownerWithdrawFeeDenominator,
+      hostFeeNumerator,
+      hostFeeDenominator,
+      curveType,
     );
 
     transaction.add(instruction);
@@ -366,6 +547,8 @@ export class TokenSwap {
    * @param poolSource Pool's source token account
    * @param poolDestination Pool's destination token account
    * @param userDestination User's destination token account
+   * @param hostFeeAccount Host account to gather fees
+   * @param userTransferAuthority Account delegated to transfer user's tokens
    * @param amountIn Amount to transfer from source account
    * @param minimumAmountOut Minimum amount of tokens the user will receive
    */
@@ -374,6 +557,8 @@ export class TokenSwap {
     poolSource: PublicKey,
     poolDestination: PublicKey,
     userDestination: PublicKey,
+    hostFeeAccount: ?PublicKey,
+    userTransferAuthority: Account,
     amountIn: number | Numberu64,
     minimumAmountOut: number | Numberu64,
   ): Promise<TransactionSignature> {
@@ -384,10 +569,14 @@ export class TokenSwap {
         TokenSwap.swapInstruction(
           this.tokenSwap,
           this.authority,
+          userTransferAuthority.publicKey,
           userSource,
           poolSource,
           poolDestination,
           userDestination,
+          this.poolToken,
+          this.feeAccount,
+          hostFeeAccount,
           this.swapProgramId,
           this.tokenProgramId,
           amountIn,
@@ -395,16 +584,21 @@ export class TokenSwap {
         ),
       ),
       this.payer,
+      userTransferAuthority,
     );
   }
 
   static swapInstruction(
     tokenSwap: PublicKey,
     authority: PublicKey,
+    userTransferAuthority: PublicKey,
     userSource: PublicKey,
     poolSource: PublicKey,
     poolDestination: PublicKey,
     userDestination: PublicKey,
+    poolMint: PublicKey,
+    feeAccount: PublicKey,
+    hostFeeAccount: ?PublicKey,
     swapProgramId: PublicKey,
     tokenProgramId: PublicKey,
     amountIn: number | Numberu64,
@@ -429,12 +623,18 @@ export class TokenSwap {
     const keys = [
       {pubkey: tokenSwap, isSigner: false, isWritable: false},
       {pubkey: authority, isSigner: false, isWritable: false},
+      {pubkey: userTransferAuthority, isSigner: true, isWritable: false},
       {pubkey: userSource, isSigner: false, isWritable: true},
       {pubkey: poolSource, isSigner: false, isWritable: true},
       {pubkey: poolDestination, isSigner: false, isWritable: true},
       {pubkey: userDestination, isSigner: false, isWritable: true},
+      {pubkey: poolMint, isSigner: false, isWritable: true},
+      {pubkey: feeAccount, isSigner: false, isWritable: true},
       {pubkey: tokenProgramId, isSigner: false, isWritable: false},
     ];
+    if (hostFeeAccount != null) {
+      keys.push({pubkey: hostFeeAccount, isSigner: false, isWritable: true});
+    }
     return new TransactionInstruction({
       keys,
       programId: swapProgramId,
@@ -447,25 +647,28 @@ export class TokenSwap {
    * @param userAccountA User account for token A
    * @param userAccountB User account for token B
    * @param poolAccount User account for pool token
+   * @param userTransferAuthority Account delegated to transfer user's tokens
    * @param poolTokenAmount Amount of pool tokens to mint
    * @param maximumTokenA The maximum amount of token A to deposit
    * @param maximumTokenB The maximum amount of token B to deposit
    */
-  async deposit(
+  async depositAllTokenTypes(
     userAccountA: PublicKey,
     userAccountB: PublicKey,
     poolAccount: PublicKey,
+    userTransferAuthority: Account,
     poolTokenAmount: number | Numberu64,
     maximumTokenA: number | Numberu64,
     maximumTokenB: number | Numberu64,
   ): Promise<TransactionSignature> {
     return await sendAndConfirmTransaction(
-      'deposit',
+      'depositAllTokenTypes',
       this.connection,
       new Transaction().add(
-        TokenSwap.depositInstruction(
+        TokenSwap.depositAllTokenTypesInstruction(
           this.tokenSwap,
           this.authority,
+          userTransferAuthority.publicKey,
           userAccountA,
           userAccountB,
           this.tokenAccountA,
@@ -480,12 +683,14 @@ export class TokenSwap {
         ),
       ),
       this.payer,
+      userTransferAuthority,
     );
   }
 
-  static depositInstruction(
+  static depositAllTokenTypesInstruction(
     tokenSwap: PublicKey,
     authority: PublicKey,
+    userTransferAuthority: PublicKey,
     sourceA: PublicKey,
     sourceB: PublicKey,
     intoA: PublicKey,
@@ -519,6 +724,7 @@ export class TokenSwap {
     const keys = [
       {pubkey: tokenSwap, isSigner: false, isWritable: false},
       {pubkey: authority, isSigner: false, isWritable: false},
+      {pubkey: userTransferAuthority, isSigner: true, isWritable: false},
       {pubkey: sourceA, isSigner: false, isWritable: true},
       {pubkey: sourceB, isSigner: false, isWritable: true},
       {pubkey: intoA, isSigner: false, isWritable: true},
@@ -540,14 +746,16 @@ export class TokenSwap {
    * @param userAccountA User account for token A
    * @param userAccountB User account for token B
    * @param poolAccount User account for pool token
+   * @param userTransferAuthority Account delegated to transfer user's tokens
    * @param poolTokenAmount Amount of pool tokens to burn
    * @param minimumTokenA The minimum amount of token A to withdraw
    * @param minimumTokenB The minimum amount of token B to withdraw
    */
-  async withdraw(
+  async withdrawAllTokenTypes(
     userAccountA: PublicKey,
     userAccountB: PublicKey,
     poolAccount: PublicKey,
+    userTransferAuthority: Account,
     poolTokenAmount: number | Numberu64,
     minimumTokenA: number | Numberu64,
     minimumTokenB: number | Numberu64,
@@ -556,10 +764,12 @@ export class TokenSwap {
       'withdraw',
       this.connection,
       new Transaction().add(
-        TokenSwap.withdrawInstruction(
+        TokenSwap.withdrawAllTokenTypesInstruction(
           this.tokenSwap,
           this.authority,
+          userTransferAuthority.publicKey,
           this.poolToken,
+          this.feeAccount,
           poolAccount,
           this.tokenAccountA,
           this.tokenAccountB,
@@ -573,13 +783,16 @@ export class TokenSwap {
         ),
       ),
       this.payer,
+      userTransferAuthority,
     );
   }
 
-  static withdrawInstruction(
+  static withdrawAllTokenTypesInstruction(
     tokenSwap: PublicKey,
     authority: PublicKey,
+    userTransferAuthority: PublicKey,
     poolMint: PublicKey,
+    feeAccount: PublicKey,
     sourcePoolAccount: PublicKey,
     fromA: PublicKey,
     fromB: PublicKey,
@@ -612,12 +825,198 @@ export class TokenSwap {
     const keys = [
       {pubkey: tokenSwap, isSigner: false, isWritable: false},
       {pubkey: authority, isSigner: false, isWritable: false},
+      {pubkey: userTransferAuthority, isSigner: true, isWritable: false},
       {pubkey: poolMint, isSigner: false, isWritable: true},
       {pubkey: sourcePoolAccount, isSigner: false, isWritable: true},
       {pubkey: fromA, isSigner: false, isWritable: true},
       {pubkey: fromB, isSigner: false, isWritable: true},
       {pubkey: userAccountA, isSigner: false, isWritable: true},
       {pubkey: userAccountB, isSigner: false, isWritable: true},
+      {pubkey: feeAccount, isSigner: false, isWritable: true},
+      {pubkey: tokenProgramId, isSigner: false, isWritable: false},
+    ];
+    return new TransactionInstruction({
+      keys,
+      programId: swapProgramId,
+      data,
+    });
+  }
+
+  /**
+   * Deposit one side of tokens into the pool
+   * @param userAccount User account to deposit token A or B
+   * @param poolAccount User account to receive pool tokens
+   * @param userTransferAuthority Account delegated to transfer user's tokens
+   * @param sourceTokenAmount The amount of token A or B to deposit
+   * @param minimumPoolTokenAmount Minimum amount of pool tokens to mint
+   */
+  async depositSingleTokenTypeExactAmountIn(
+    userAccount: PublicKey,
+    poolAccount: PublicKey,
+    userTransferAuthority: Account,
+    sourceTokenAmount: number | Numberu64,
+    minimumPoolTokenAmount: number | Numberu64,
+  ): Promise<TransactionSignature> {
+    return await sendAndConfirmTransaction(
+      'depositSingleTokenTypeExactAmountIn',
+      this.connection,
+      new Transaction().add(
+        TokenSwap.depositSingleTokenTypeExactAmountInInstruction(
+          this.tokenSwap,
+          this.authority,
+          userTransferAuthority.publicKey,
+          userAccount,
+          this.tokenAccountA,
+          this.tokenAccountB,
+          this.poolToken,
+          poolAccount,
+          this.swapProgramId,
+          this.tokenProgramId,
+          sourceTokenAmount,
+          minimumPoolTokenAmount,
+        ),
+      ),
+      this.payer,
+      userTransferAuthority,
+    );
+  }
+
+  static depositSingleTokenTypeExactAmountInInstruction(
+    tokenSwap: PublicKey,
+    authority: PublicKey,
+    userTransferAuthority: PublicKey,
+    source: PublicKey,
+    intoA: PublicKey,
+    intoB: PublicKey,
+    poolToken: PublicKey,
+    poolAccount: PublicKey,
+    swapProgramId: PublicKey,
+    tokenProgramId: PublicKey,
+    sourceTokenAmount: number | Numberu64,
+    minimumPoolTokenAmount: number | Numberu64,
+  ): TransactionInstruction {
+    const dataLayout = BufferLayout.struct([
+      BufferLayout.u8('instruction'),
+      Layout.uint64('sourceTokenAmount'),
+      Layout.uint64('minimumPoolTokenAmount'),
+    ]);
+
+    const data = Buffer.alloc(dataLayout.span);
+    dataLayout.encode(
+      {
+        instruction: 4, // depositSingleTokenTypeExactAmountIn instruction
+        sourceTokenAmount: new Numberu64(sourceTokenAmount).toBuffer(),
+        minimumPoolTokenAmount: new Numberu64(
+          minimumPoolTokenAmount,
+        ).toBuffer(),
+      },
+      data,
+    );
+
+    const keys = [
+      {pubkey: tokenSwap, isSigner: false, isWritable: false},
+      {pubkey: authority, isSigner: false, isWritable: false},
+      {pubkey: userTransferAuthority, isSigner: true, isWritable: false},
+      {pubkey: source, isSigner: false, isWritable: true},
+      {pubkey: intoA, isSigner: false, isWritable: true},
+      {pubkey: intoB, isSigner: false, isWritable: true},
+      {pubkey: poolToken, isSigner: false, isWritable: true},
+      {pubkey: poolAccount, isSigner: false, isWritable: true},
+      {pubkey: tokenProgramId, isSigner: false, isWritable: false},
+    ];
+    return new TransactionInstruction({
+      keys,
+      programId: swapProgramId,
+      data,
+    });
+  }
+
+  /**
+   * Withdraw tokens from the pool
+   *
+   * @param userAccount User account to receive token A or B
+   * @param poolAccount User account to burn pool token
+   * @param userTransferAuthority Account delegated to transfer user's tokens
+   * @param destinationTokenAmount The amount of token A or B to withdraw
+   * @param maximumPoolTokenAmount Maximum amount of pool tokens to burn
+   */
+  async withdrawSingleTokenTypeExactAmountOut(
+    userAccount: PublicKey,
+    poolAccount: PublicKey,
+    userTransferAuthority: Account,
+    destinationTokenAmount: number | Numberu64,
+    maximumPoolTokenAmount: number | Numberu64,
+  ): Promise<TransactionSignature> {
+    return await sendAndConfirmTransaction(
+      'withdrawSingleTokenTypeExactAmountOut',
+      this.connection,
+      new Transaction().add(
+        TokenSwap.withdrawSingleTokenTypeExactAmountOutInstruction(
+          this.tokenSwap,
+          this.authority,
+          userTransferAuthority.publicKey,
+          this.poolToken,
+          this.feeAccount,
+          poolAccount,
+          this.tokenAccountA,
+          this.tokenAccountB,
+          userAccount,
+          this.swapProgramId,
+          this.tokenProgramId,
+          destinationTokenAmount,
+          maximumPoolTokenAmount,
+        ),
+      ),
+      this.payer,
+      userTransferAuthority,
+    );
+  }
+
+  static withdrawSingleTokenTypeExactAmountOutInstruction(
+    tokenSwap: PublicKey,
+    authority: PublicKey,
+    userTransferAuthority: PublicKey,
+    poolMint: PublicKey,
+    feeAccount: PublicKey,
+    sourcePoolAccount: PublicKey,
+    fromA: PublicKey,
+    fromB: PublicKey,
+    userAccount: PublicKey,
+    swapProgramId: PublicKey,
+    tokenProgramId: PublicKey,
+    destinationTokenAmount: number | Numberu64,
+    maximumPoolTokenAmount: number | Numberu64,
+  ): TransactionInstruction {
+    const dataLayout = BufferLayout.struct([
+      BufferLayout.u8('instruction'),
+      Layout.uint64('destinationTokenAmount'),
+      Layout.uint64('maximumPoolTokenAmount'),
+    ]);
+
+    const data = Buffer.alloc(dataLayout.span);
+    dataLayout.encode(
+      {
+        instruction: 5, // withdrawSingleTokenTypeExactAmountOut instruction
+        destinationTokenAmount: new Numberu64(
+          destinationTokenAmount,
+        ).toBuffer(),
+        maximumPoolTokenAmount: new Numberu64(
+          maximumPoolTokenAmount,
+        ).toBuffer(),
+      },
+      data,
+    );
+
+    const keys = [
+      {pubkey: tokenSwap, isSigner: false, isWritable: false},
+      {pubkey: authority, isSigner: false, isWritable: false},
+      {pubkey: userTransferAuthority, isSigner: true, isWritable: false},
+      {pubkey: poolMint, isSigner: false, isWritable: true},
+      {pubkey: sourcePoolAccount, isSigner: false, isWritable: true},
+      {pubkey: fromA, isSigner: false, isWritable: true},
+      {pubkey: fromB, isSigner: false, isWritable: true},
+      {pubkey: userAccount, isSigner: false, isWritable: true},
+      {pubkey: feeAccount, isSigner: false, isWritable: true},
       {pubkey: tokenProgramId, isSigner: false, isWritable: false},
     ];
     return new TransactionInstruction({

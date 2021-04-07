@@ -1,7 +1,7 @@
 //! Error types
 
 use num_derive::FromPrimitive;
-use solana_sdk::{decode_error::DecodeError, program_error::ProgramError};
+use solana_program::{decode_error::DecodeError, program_error::ProgramError};
 use thiserror::Error;
 
 /// Errors that may be returned by the TokenSwap program.
@@ -46,8 +46,8 @@ pub enum SwapError {
     /// The output token is invalid for swap.
     #[error("InvalidOutput")]
     InvalidOutput,
-    /// The calculation failed.
-    #[error("CalculationFailure")]
+    /// General calculation failure due to overflow or underflow
+    #[error("General calculation failure due to overflow or underflow")]
     CalculationFailure,
     /// Invalid instruction number passed in.
     #[error("Invalid instruction")]
@@ -58,6 +58,39 @@ pub enum SwapError {
     /// Swap instruction exceeds desired slippage limit
     #[error("Swap instruction exceeds desired slippage limit")]
     ExceededSlippage,
+    /// The provided token account has a close authority.
+    #[error("Token account has a close authority")]
+    InvalidCloseAuthority,
+    /// The pool token mint has a freeze authority.
+    #[error("Pool token mint has a freeze authority")]
+    InvalidFreezeAuthority,
+    /// The pool fee token account is incorrect
+    #[error("Pool fee token account incorrect")]
+    IncorrectFeeAccount,
+    /// Given pool token amount results in zero trading tokens
+    #[error("Given pool token amount results in zero trading tokens")]
+    ZeroTradingTokens,
+    /// The fee calculation failed due to overflow, underflow, or unexpected 0
+    #[error("Fee calculation failed due to overflow, underflow, or unexpected 0")]
+    FeeCalculationFailure,
+    /// ConversionFailure
+    #[error("Conversion to u64 failed with an overflow or underflow")]
+    ConversionFailure,
+    /// The provided fee does not match the program owner's constraints
+    #[error("The provided fee does not match the program owner's constraints")]
+    InvalidFee,
+    /// The provided token program does not match the token program expected by the swap
+    #[error("The provided token program does not match the token program expected by the swap")]
+    IncorrectTokenProgramId,
+    /// The provided curve type is not supported by the program owner
+    #[error("The provided curve type is not supported by the program owner")]
+    UnsupportedCurveType,
+    /// The provided curve parameters are invalid
+    #[error("The provided curve parameters are invalid")]
+    InvalidCurve,
+    /// The operation cannot be performed on the given curve
+    #[error("The operation cannot be performed on the given curve")]
+    UnsupportedCurveOperation,
 }
 impl From<SwapError> for ProgramError {
     fn from(e: SwapError) -> Self {

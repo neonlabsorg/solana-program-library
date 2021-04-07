@@ -9,8 +9,10 @@ edition = "2018"
 
 [dev-dependencies]
 rand = { version = "0.7.0"}
-spl-token = { path = "../program" }
-solana-runtime = { version = "1.3.14" }
-solana-sdk = { version = "1.3.17" }
-solana-bpf-loader-program = { version = "1.3.14" }
-solana_rbpf = "=0.1.31"
+spl-token = { path = "../program", features = [ "no-entrypoint" ] }
+solana-runtime = "1.5.11"
+solana-sdk = "1.5.11"
+solana-bpf-loader-program = "1.5.11"
+solana_rbpf = "0.2"
+
+[workspace]

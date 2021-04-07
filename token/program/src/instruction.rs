@@ -1,7 +1,7 @@
 //! Instruction types
 
 use crate::error::TokenError;
-use solana_sdk::{
+use solana_program::{
     instruction::{AccountMeta, Instruction},
     program_error::ProgramError,
     program_option::COption,
@@ -20,11 +20,14 @@ pub const MAX_SIGNERS: usize = 11;
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum TokenInstruction {
-    /// Initializes a new mint and optionally deposits all the newly minted tokens in an account.
+    /// Initializes a new mint and optionally deposits all the newly minted
+    /// tokens in an account.
     ///
-    /// The `InitializeMint` instruction requires no signers and MUST be included within
-    /// the same Transaction as the system program's `CreateInstruction` that creates the account
-    /// being initialized.  Otherwise another party can acquire ownership of the uninitialized account.
+    /// The `InitializeMint` instruction requires no signers and MUST be
+    /// included within the same Transaction as the system program's
+    /// `CreateAccount` instruction that creates the account being initialized.
+    /// Otherwise another party can acquire ownership of the uninitialized
+    /// account.
     ///
     /// Accounts expected by this instruction:
     ///
@@ -39,14 +42,17 @@ pub enum TokenInstruction {
         /// The freeze authority/multisignature of the mint.
         freeze_authority: COption<Pubkey>,
     },
-    /// Initializes a new account to hold tokens.  If this account is associated with the native
-    /// mint then the token balance of the initialized account will be equal to the amount of SOL
-    /// in the account. If this account is associated with another mint, that mint must be
-    /// initialized before this command can succeed.
+    /// Initializes a new account to hold tokens.  If this account is associated
+    /// with the native mint then the token balance of the initialized account
+    /// will be equal to the amount of SOL in the account. If this account is
+    /// associated with another mint, that mint must be initialized before this
+    /// command can succeed.
     ///
-    /// The `InitializeAccount` instruction requires no signers and MUST be included within
-    /// the same Transaction as the system program's `CreateInstruction` that creates the account
-    /// being initialized.  Otherwise another party can acquire ownership of the uninitialized account.
+    /// The `InitializeAccount` instruction requires no signers and MUST be
+    /// included within the same Transaction as the system program's
+    /// `CreateAccount` instruction that creates the account being initialized.
+    /// Otherwise another party can acquire ownership of the uninitialized
+    /// account.
     ///
     /// Accounts expected by this instruction:
     ///
@@ -57,26 +63,32 @@ pub enum TokenInstruction {
     InitializeAccount,
     /// Initializes a multisignature account with N provided signers.
     ///
-    /// Multisignature accounts can used in place of any single owner/delegate accounts in any
-    /// token instruction that require an owner/delegate to be present.  The variant field represents the
-    /// number of signers (M) required to validate this multisignature account.
+    /// Multisignature accounts can used in place of any single owner/delegate
+    /// accounts in any token instruction that require an owner/delegate to be
+    /// present.  The variant field represents the number of signers (M)
+    /// required to validate this multisignature account.
     ///
-    /// The `InitializeMultisig` instruction requires no signers and MUST be included within
-    /// the same Transaction as the system program's `CreateInstruction` that creates the account
-    /// being initialized.  Otherwise another party can acquire ownership of the uninitialized account.
+    /// The `InitializeMultisig` instruction requires no signers and MUST be
+    /// included within the same Transaction as the system program's
+    /// `CreateAccount` instruction that creates the account being initialized.
+    /// Otherwise another party can acquire ownership of the uninitialized
+    /// account.
     ///
     /// Accounts expected by this instruction:
     ///
     ///   0. `[writable]` The multisignature account to initialize.
     ///   1. `[]` Rent sysvar
-    ///   2. ..2+N. `[]` The signer accounts, must equal to N where 1 <= N <= 11.
+    ///   2. ..2+N. `[]` The signer accounts, must equal to N where 1 <= N <=
+    ///      11.
     InitializeMultisig {
-        /// The number of signers (M) required to validate this multisignature account.
+        /// The number of signers (M) required to validate this multisignature
+        /// account.
         m: u8,
     },
-    /// Transfers tokens from one account to another either directly or via a delegate.  If this
-    /// account is associated with the native mint then equal amounts of SOL and Tokens will be
-    /// transferred to the destination account.
+    /// Transfers tokens from one account to another either directly or via a
+    /// delegate.  If this account is associated with the native mint then equal
+    /// amounts of SOL and Tokens will be transferred to the destination
+    /// account.
     ///
     /// Accounts expected by this instruction:
     ///
@@ -94,8 +106,8 @@ pub enum TokenInstruction {
         /// The amount of tokens to transfer.
         amount: u64,
     },
-    /// Approves a delegate.  A delegate is given the authority over
-    /// tokens on behalf of the source account's owner.
+    /// Approves a delegate.  A delegate is given the authority over tokens on
+    /// behalf of the source account's owner.
     ///
     /// Accounts expected by this instruction:
     ///
@@ -144,7 +156,8 @@ pub enum TokenInstruction {
         /// The new authority
         new_authority: COption<Pubkey>,
     },
-    /// Mints new tokens to an account.  The native mint does not support minting.
+    /// Mints new tokens to an account.  The native mint does not support
+    /// minting.
     ///
     /// Accounts expected by this instruction:
     ///
@@ -162,8 +175,8 @@ pub enum TokenInstruction {
         /// The amount of new tokens to mint.
         amount: u64,
     },
-    /// Burns tokens by removing them from an account.  `Burn` does not support accounts
-    /// associated with the native mint, use `CloseAccount` instead.
+    /// Burns tokens by removing them from an account.  `Burn` does not support
+    /// accounts associated with the native mint, use `CloseAccount` instead.
     ///
     /// Accounts expected by this instruction:
     ///
@@ -197,7 +210,8 @@ pub enum TokenInstruction {
     ///   2. `[]` The account's multisignature owner.
     ///   3. ..3+M `[signer]` M signer accounts.
     CloseAccount,
-    /// Freeze an Initialized account using the Mint's freeze_authority (if set).
+    /// Freeze an Initialized account using the Mint's freeze_authority (if
+    /// set).
     ///
     /// Accounts expected by this instruction:
     ///
@@ -228,13 +242,14 @@ pub enum TokenInstruction {
     ///   3. ..3+M `[signer]` M signer accounts.
     ThawAccount,
 
-    /// Transfers tokens from one account to another either directly or via a delegate.  If this
-    /// account is associated with the native mint then equal amounts of SOL and Tokens will be
-    /// transferred to the destination account.
+    /// Transfers tokens from one account to another either directly or via a
+    /// delegate.  If this account is associated with the native mint then equal
+    /// amounts of SOL and Tokens will be transferred to the destination
+    /// account.
     ///
-    /// This instruction differs from Transfer in that the token mint and decimals value is
-    /// checked by the caller.  This may be useful when creating transactions offline or within a
-    /// hardware wallet.
+    /// This instruction differs from Transfer in that the token mint and
+    /// decimals value is checked by the caller.  This may be useful when
+    /// creating transactions offline or within a hardware wallet.
     ///
     /// Accounts expected by this instruction:
     ///
@@ -256,12 +271,12 @@ pub enum TokenInstruction {
         /// Expected number of base 10 digits to the right of the decimal place.
         decimals: u8,
     },
-    /// Approves a delegate.  A delegate is given the authority over
-    /// tokens on behalf of the source account's owner.
+    /// Approves a delegate.  A delegate is given the authority over tokens on
+    /// behalf of the source account's owner.
     ///
-    /// This instruction differs from Approve in that the token mint and decimals value is checked
-    /// by the caller.  This may be useful when creating transactions offline or within a hardware
-    /// wallet.
+    /// This instruction differs from Approve in that the token mint and
+    /// decimals value is checked by the caller.  This may be useful when
+    /// creating transactions offline or within a hardware wallet.
     ///
     /// Accounts expected by this instruction:
     ///
@@ -283,10 +298,12 @@ pub enum TokenInstruction {
         /// Expected number of base 10 digits to the right of the decimal place.
         decimals: u8,
     },
-    /// Mints new tokens to an account.  The native mint does not support minting.
+    /// Mints new tokens to an account.  The native mint does not support
+    /// minting.
     ///
-    /// This instruction differs from MintTo in that the decimals value is checked by the
-    /// caller.  This may be useful when creating transactions offline or within a hardware wallet.
+    /// This instruction differs from MintTo in that the decimals value is
+    /// checked by the caller.  This may be useful when creating transactions
+    /// offline or within a hardware wallet.
     ///
     /// Accounts expected by this instruction:
     ///
@@ -306,11 +323,13 @@ pub enum TokenInstruction {
         /// Expected number of base 10 digits to the right of the decimal place.
         decimals: u8,
     },
-    /// Burns tokens by removing them from an account.  `BurnChecked` does not support accounts
-    /// associated with the native mint, use `CloseAccount` instead.
+    /// Burns tokens by removing them from an account.  `BurnChecked` does not
+    /// support accounts associated with the native mint, use `CloseAccount`
+    /// instead.
     ///
-    /// This instruction differs from Burn in that the decimals value is checked by the caller.
-    /// This may be useful when creating transactions offline or within a hardware wallet.
+    /// This instruction differs from Burn in that the decimals value is checked
+    /// by the caller. This may be useful when creating transactions offline or
+    /// within a hardware wallet.
     ///
     /// Accounts expected by this instruction:
     ///
@@ -329,6 +348,20 @@ pub enum TokenInstruction {
         amount: u64,
         /// Expected number of base 10 digits to the right of the decimal place.
         decimals: u8,
+    },
+    /// Like InitializeAccount, but the owner pubkey is passed via instruction data
+    /// rather than the accounts list. This variant may be preferable when using
+    /// Cross Program Invocation from an instruction that does not need the owner's
+    /// `AccountInfo` otherwise.
+    ///
+    /// Accounts expected by this instruction:
+    ///
+    ///   0. `[writable]`  The account to initialize.
+    ///   1. `[]` The mint this account will be associated with.
+    ///   3. `[]` Rent sysvar
+    InitializeAccount2 {
+        /// The new account's owner/multisignature.
+        owner: Pubkey,
     },
 }
 impl TokenInstruction {
@@ -427,6 +460,10 @@ impl TokenInstruction {
 
                 Self::BurnChecked { amount, decimals }
             }
+            16 => {
+                let (owner, _rest) = Self::unpack_pubkey(rest)?;
+                Self::InitializeAccount2 { owner }
+            }
 
             _ => return Err(TokenError::InvalidInstruction.into()),
         })
@@ -498,6 +535,10 @@ impl TokenInstruction {
                 buf.push(15);
                 buf.extend_from_slice(&amount.to_le_bytes());
                 buf.push(decimals);
+            }
+            &Self::InitializeAccount2 { owner } => {
+                buf.push(16);
+                buf.extend_from_slice(owner.as_ref());
             }
         };
         buf
@@ -606,12 +647,37 @@ pub fn initialize_account(
     mint_pubkey: &Pubkey,
     owner_pubkey: &Pubkey,
 ) -> Result<Instruction, ProgramError> {
-    let data = TokenInstruction::InitializeAccount.pack(); // TODO do we need to return result?
+    let data = TokenInstruction::InitializeAccount.pack();
 
     let accounts = vec![
         AccountMeta::new(*account_pubkey, false),
         AccountMeta::new_readonly(*mint_pubkey, false),
         AccountMeta::new_readonly(*owner_pubkey, false),
+        AccountMeta::new_readonly(sysvar::rent::id(), false),
+    ];
+
+    Ok(Instruction {
+        program_id: *token_program_id,
+        accounts,
+        data,
+    })
+}
+
+/// Creates a `InitializeAccount2` instruction.
+pub fn initialize_account2(
+    token_program_id: &Pubkey,
+    account_pubkey: &Pubkey,
+    mint_pubkey: &Pubkey,
+    owner_pubkey: &Pubkey,
+) -> Result<Instruction, ProgramError> {
+    let data = TokenInstruction::InitializeAccount2 {
+        owner: *owner_pubkey,
+    }
+    .pack();
+
+    let accounts = vec![
+        AccountMeta::new(*account_pubkey, false),
+        AccountMeta::new_readonly(*mint_pubkey, false),
         AccountMeta::new_readonly(sysvar::rent::id(), false),
     ];
 
@@ -1038,7 +1104,7 @@ pub fn burn_checked(
 
 /// Utility function that checks index is between MIN_SIGNERS and MAX_SIGNERS
 pub fn is_valid_signer_index(index: usize) -> bool {
-    !(index < MIN_SIGNERS || index > MAX_SIGNERS)
+    (MIN_SIGNERS..=MAX_SIGNERS).contains(&index)
 }
 
 #[cfg(test)]
@@ -1192,6 +1258,16 @@ mod test {
         };
         let packed = check.pack();
         let expect = Vec::from([15u8, 1, 0, 0, 0, 0, 0, 0, 0, 2]);
+        assert_eq!(packed, expect);
+        let unpacked = TokenInstruction::unpack(&expect).unwrap();
+        assert_eq!(unpacked, check);
+
+        let check = TokenInstruction::InitializeAccount2 {
+            owner: Pubkey::new(&[2u8; 32]),
+        };
+        let packed = check.pack();
+        let mut expect = vec![16u8];
+        expect.extend_from_slice(&[2u8; 32]);
         assert_eq!(packed, expect);
         let unpacked = TokenInstruction::unpack(&expect).unwrap();
         assert_eq!(unpacked, check);
