@@ -22,12 +22,23 @@ use std::rc::Rc;
 #[derive(Serialize, Deserialize, Debug)]
 struct AccountJSON {
     address: String,
+    key: String,
     writable: bool,
     new: bool,
 }
 
+enum Key {
+    Solidity {
+        address: H160,
+    },
+    Solana {
+        key: Pubkey,
+    },
+}
+
 struct SolanaAccount {
     account: Account,
+    code_account: Option<Account>,
     key: Pubkey,
     writable: bool,
 }
@@ -41,7 +52,7 @@ impl SolanaAccount {
 
 pub struct EmulatorAccountStorage {
     accounts: RefCell<HashMap<H160, SolanaAccount>>,
-    new_accounts: RefCell<HashSet<H160>>,
+    new_accounts: RefCell<Vec<Key>>,
     rpc_client: RpcClient,
     program_id: Pubkey,
     contract_id: H160,
@@ -83,7 +94,7 @@ impl EmulatorAccountStorage {
 
         Self {
             accounts: RefCell::new(HashMap::new()),
-            new_accounts: RefCell::new(HashSet::new()),
+            new_accounts: RefCell::new(Vec::new()),
             rpc_client: rpc_client,
             program_id: program_id,
             contract_id: contract_id,
@@ -130,6 +141,7 @@ impl EmulatorAccountStorage {
                             },
                             Err(_) => {
                                 eprintln!("Account not found");
+                                new_accounts.push(Key::Solana{key: code_key.clone()});
                                 None
                             }
                         }
@@ -142,7 +154,7 @@ impl EmulatorAccountStorage {
                 Err(_) => {
                     eprintln!("Account not found {}", &address.to_string());
 
-                    new_accounts.insert(address.clone());
+                    new_accounts.push(Key::Solidity{address: address.clone()});
 
                     false
                 }
@@ -186,21 +198,45 @@ impl EmulatorAccountStorage {
     }
 
     pub fn get_used_accounts(&self, status: &String, result: &std::vec::Vec<u8>)
-    {          
-        let mut arr = Vec::new();    
-        
-        eprint!("[");
+    {
+        let new_accounts = self.new_accounts.borrow();
+        let mut new_solana_accounts = HashSet::new();
+        let mut new_solidity_accounts = HashSet::new();
+        for acc in new_accounts.iter() {
+            match acc {
+                Key::Solana { key } => new_solana_accounts.insert(key),
+                Key::Solidity { address } => new_solidity_accounts.insert(address),
+            };
+        }
+
+        let mut arr = Vec::new();
+
         let accounts = self.accounts.borrow();
         for (address, acc) in accounts.iter() {
-            arr.push(AccountJSON{address: "0x".to_string() + &hex::encode(&address.to_fixed_bytes()), writable: acc.writable, new: false});
-            eprint!("{{\"address\":\"0x{}\",\"write\":\"{}\"}},", &hex::encode(&address.to_fixed_bytes()), &acc.writable.to_string());
+            let solana_address = if *address == self.contract_id {
+                Pubkey::find_program_address(&[&address.to_fixed_bytes()], &self.program_id).0
+            } else {
+                let seed = bs58::encode(&address.to_fixed_bytes()).into_string();
+                Pubkey::create_with_seed(&self.base_account, &seed, &self.program_id).unwrap()
+            };
+            arr.push(AccountJSON{address: "0x".to_string() + &hex::encode(&address.to_fixed_bytes()), writable: acc.writable, new: false, key: solana_address.to_string()});
+            if acc.code_account.is_some() {
+                let code_key= SolidityAccount::get_code_account(&acc.account.data).unwrap();
+                arr.push(AccountJSON{address: "".to_string(), writable: acc.writable, new: false, key: code_key.to_string()});
+            }
         }
-        let new_accounts = self.new_accounts.borrow(); 
-        for address in new_accounts.iter() {
-            arr.push(AccountJSON{address: "0x".to_string() + &hex::encode(&address.to_fixed_bytes()), writable: false, new: true});
-            eprint!("{{\"address\":\"0x{}\",\"new\":\"true\"}},", &hex::encode(&address.to_fixed_bytes()));
-        }    
-        eprintln!("]");
+        for solidity_address in new_solidity_accounts.iter() {
+            let solana_address = if **solidity_address == self.contract_id {
+                Pubkey::find_program_address(&[&solidity_address.to_fixed_bytes()], &self.program_id).0
+            } else {
+                let seed = bs58::encode(&solidity_address.to_fixed_bytes()).into_string();
+                Pubkey::create_with_seed(&self.base_account, &seed, &self.program_id).unwrap()
+            };
+            arr.push(AccountJSON{address: "0x".to_string() + &hex::encode(&solidity_address.to_fixed_bytes()), writable: false, new: true, key: solana_address.to_string()});
+        }
+        for solana_address in new_solana_accounts.iter() {
+            arr.push(AccountJSON{address: "".to_string(), writable: false, new: true, key: solana_address.to_string()});
+        }
 
         let js = json!({"accounts": arr, "result": &hex::encode(&result), "exit_status": &status}).to_string();
 
