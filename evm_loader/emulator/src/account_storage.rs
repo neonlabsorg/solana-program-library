@@ -227,7 +227,11 @@ impl AccountStorage for EmulatorAccountStorage {
         match accounts.get(&address) {
             None => None,
             Some(acc) => {
-                Some(SolidityAccount::new(&acc.key, Rc::new(RefCell::new(&mut acc.account.data.clone())), acc.account.lamports).unwrap().get_seeds())
+                if acc.code_account.is_some() {
+                    Some(SolidityAccount::new(&acc.key, &acc.account.data, acc.account.lamports, Some(Rc::new(RefCell::new(&mut acc.code_account.as_ref().unwrap().data.clone())))).unwrap().get_seeds())
+                } else {
+                    Some(SolidityAccount::new(&acc.key, &acc.account.data, acc.account.lamports, None).unwrap().get_seeds())
+                }
             }
         }
     }
@@ -240,8 +244,12 @@ impl AccountStorage for EmulatorAccountStorage {
         match accounts.get(&address) {
             None => None,
             Some(acc) => {
-                Some(SolidityAccount::new(&acc.key, Rc::new(RefCell::new(&mut acc.account.data.clone())), acc.account.lamports).unwrap().get_seeds())
-            }
+                if acc.code_account.is_some() {
+                    Some(SolidityAccount::new(&acc.key, &acc.account.data, acc.account.lamports, Some(Rc::new(RefCell::new(&mut acc.code_account.as_ref().unwrap().data.clone())))).unwrap().get_seeds())
+                } else {
+                    Some(SolidityAccount::new(&acc.key, &acc.account.data, acc.account.lamports, None).unwrap().get_seeds())
+                }
+            } 
         }
     }
 
@@ -251,7 +259,11 @@ impl AccountStorage for EmulatorAccountStorage {
         match accounts.get(&address) {
             None => Basic{balance: U256::zero(), nonce: U256::zero()},
             Some(acc) => {
-                SolidityAccount::new(&acc.key, Rc::new(RefCell::new(&mut acc.account.data.clone())), acc.account.lamports).unwrap().basic()
+                if acc.code_account.is_some() {
+                    SolidityAccount::new(&acc.key, &acc.account.data, acc.account.lamports, Some(Rc::new(RefCell::new(&mut acc.code_account.as_ref().unwrap().data.clone())))).unwrap().basic()
+                } else {
+                    SolidityAccount::new(&acc.key, &acc.account.data, acc.account.lamports, None).unwrap().basic()
+                }
             },
         }
     }
@@ -262,7 +274,11 @@ impl AccountStorage for EmulatorAccountStorage {
         match accounts.get(&address) {
             None => keccak256_digest(&[]),
             Some(acc) => {
-                SolidityAccount::new(&acc.key, Rc::new(RefCell::new(&mut acc.account.data.clone())), acc.account.lamports).unwrap().code_hash()
+                if acc.code_account.is_some() {
+                    SolidityAccount::new(&acc.key, &acc.account.data, acc.account.lamports, Some(Rc::new(RefCell::new(&mut acc.code_account.as_ref().unwrap().data.clone())))).unwrap().code_hash()
+                } else {
+                    SolidityAccount::new(&acc.key, &acc.account.data, acc.account.lamports, None).unwrap().code_hash()
+                }
             },
         }
     }
@@ -273,7 +289,11 @@ impl AccountStorage for EmulatorAccountStorage {
         match accounts.get(&address) {
             None => 0,
             Some(acc) => {
-                SolidityAccount::new(&acc.key, Rc::new(RefCell::new(&mut acc.account.data.clone())), acc.account.lamports).unwrap().code_size()
+                if acc.code_account.is_some() {
+                    SolidityAccount::new(&acc.key, &acc.account.data, acc.account.lamports, Some(Rc::new(RefCell::new(&mut acc.code_account.as_ref().unwrap().data.clone())))).unwrap().code_size()
+                } else {
+                    SolidityAccount::new(&acc.key, &acc.account.data, acc.account.lamports, None).unwrap().code_size()
+                }
             },
         }
     }
@@ -284,7 +304,11 @@ impl AccountStorage for EmulatorAccountStorage {
         match accounts.get(&address) {
             None => Vec::new(),
             Some(acc) => {
-                SolidityAccount::new(&acc.key, Rc::new(RefCell::new(&mut acc.account.data.clone())), acc.account.lamports).unwrap().get_code()
+                if acc.code_account.is_some() {
+                    SolidityAccount::new(&acc.key, &acc.account.data, acc.account.lamports, Some(Rc::new(RefCell::new(&mut acc.code_account.as_ref().unwrap().data.clone())))).unwrap().get_code()
+                } else {
+                    SolidityAccount::new(&acc.key, &acc.account.data, acc.account.lamports, None).unwrap().get_code()
+                }
             },
         }
     }
@@ -295,7 +319,11 @@ impl AccountStorage for EmulatorAccountStorage {
         match accounts.get(&address) {
             None => H256::default(),
             Some(acc) => {
-                SolidityAccount::new(&acc.key, Rc::new(RefCell::new(&mut acc.account.data.clone())), acc.account.lamports).unwrap().get_storage(index)
+                if acc.code_account.is_some() {
+                    SolidityAccount::new(&acc.key, &acc.account.data, acc.account.lamports, Some(Rc::new(RefCell::new(&mut acc.code_account.as_ref().unwrap().data.clone())))).unwrap().get_storage(index)
+                } else {
+                    SolidityAccount::new(&acc.key, &acc.account.data, acc.account.lamports, None).unwrap().get_storage(index)
+                }
             },
         }
     }
