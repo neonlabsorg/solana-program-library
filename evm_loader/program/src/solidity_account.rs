@@ -31,12 +31,15 @@ impl<'a> SolidityAccount<'a> {
         let (account_data, _) = AccountData::unpack(&data)?;
         if account_data.code_size > 0 {
             if code_data.is_none() {
+                debug_print!("code_data.is_none()");
                 return Err(ProgramError::InvalidAccountData);
             }
             if code_data.as_ref().unwrap().borrow().len() < account_data.code_size.try_into().unwrap() {
+                debug_print!("code_data.as_ref().unwrap().borrow().len() < account_data.code_size.try_into().unwrap()");
                 return Err(ProgramError::InvalidAccountData);
             }
             if account_data.code_account == Pubkey::new_from_array([0u8; 32]) {
+                debug_print!("account_data.code_account == Pubkey::new_from_array([0u8; 32]");
                 return Err(ProgramError::InvalidAccountData);
             }
         }
@@ -62,7 +65,7 @@ impl<'a> SolidityAccount<'a> {
             let some_data = self.code_data.as_ref().unwrap();
             let data = some_data.borrow();
             let code_size = self.account_data.code_size as usize;
-            f(&data[..code_size])
+            f(&data[32..32+code_size])
         } else {
             f(&[])
         }
@@ -85,7 +88,7 @@ impl<'a> SolidityAccount<'a> {
             let mut data = some_data.borrow_mut();
             debug_print!("Storage data borrowed");
             let code_size = self.account_data.code_size as usize;
-            let mut hamt = Hamt::new(&mut data[code_size..], false)?;
+            let mut hamt = Hamt::new(&mut data[32+code_size..], false)?;
             Ok(f(&mut hamt))
         } else {
             Err(ProgramError::UninitializedAccount)
@@ -125,7 +128,7 @@ impl<'a> SolidityAccount<'a> {
             self.account_data.code_size = code.len().try_into().map_err(|_| ProgramError::AccountDataTooSmall)?;
             debug_print!("Write code");
             let mut code_data = self.code_data.as_ref().unwrap().borrow_mut();
-            code_data[..code.len()].copy_from_slice(&code);
+            code_data[32..32+code.len()].copy_from_slice(&code);
             debug_print!("Code written");
         }
 
@@ -140,7 +143,7 @@ impl<'a> SolidityAccount<'a> {
             if code_size == 0 {return Err(ProgramError::UninitializedAccount);};
 
             let mut code_data = self.code_data.as_ref().unwrap().borrow_mut();
-            let mut storage = Hamt::new(&mut code_data[code_size..], reset_storage)?;
+            let mut storage = Hamt::new(&mut code_data[32+code_size..], reset_storage)?;
             debug_print!("Storage initialized");
             for (key, value) in storage_iter {
                 debug_print!(&("Storage value: ".to_owned() + &key.to_string() + " = " + &value.to_string()));

@@ -161,6 +161,9 @@ fn process_instruction<'a>(
             let account_data = AccountData {ether, nonce, trx_count: 0u64, signer: *funding_info.key, code_account: *program_code.key, code_size: 0u32};
             account_data.pack(&mut data)?;
 
+            let mut code_data = program_code.data.borrow_mut();
+            code_data[..32].copy_from_slice(program_info.key.as_ref());
+
             Ok(())
         },
         EvmInstruction::CreateAccount2 {lamports, space, ether, nonce} => {
@@ -464,11 +467,11 @@ fn do_create_account<'a>(program_id: &Pubkey, accounts: &'a [AccountInfo<'a>], i
 fn do_write(program_code: &AccountInfo, offset: u32, bytes: &[u8]) -> ProgramResult {
     let mut data = program_code.data.borrow_mut();
     let offset = offset as usize;
-    if data.len() < offset + bytes.len() {
+    if data.len() < 32 + offset + bytes.len() {
         debug_print!("Account data too small");
         return Err(ProgramError::AccountDataTooSmall);
     }
-    data[offset..offset + bytes.len()].copy_from_slice(&bytes);
+    data[32+offset .. 32+offset+bytes.len()].copy_from_slice(&bytes);
     Ok(())
 }
 
@@ -504,7 +507,8 @@ fn do_finalize<'a>(program_id: &Pubkey, accounts: &'a [AccountInfo<'a>]) -> Prog
 
         let code_data = {
             let data = program_code.data.borrow();
-            let (code_len, rest) = data.split_at(8);
+            let (owner_contract, rest) = data.split_at(32);
+            let (code_len, rest) = rest.split_at(8);
             let code_len = code_len.try_into().ok().map(u64::from_le_bytes).unwrap();
             let (code, _rest) = rest.split_at(code_len as usize);
             code.to_vec()
