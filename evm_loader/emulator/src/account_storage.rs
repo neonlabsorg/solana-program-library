@@ -33,9 +33,9 @@ struct SolanaAccount {
 }
 
 impl SolanaAccount {
-    pub fn new(account: Account, key: Pubkey,) -> SolanaAccount {
+    pub fn new(account: Account, key: Pubkey, code_account: Option<Account>,) -> SolanaAccount {
         eprintln!("SolanaAccount::new");
-        Self{account, key, writable: false}
+        Self{account, key, writable: false, code_account}
     }
 }
 
@@ -98,20 +98,44 @@ impl EmulatorAccountStorage {
         let mut accounts = self.accounts.borrow_mut(); 
         let mut new_accounts = self.new_accounts.borrow_mut(); 
         if accounts.get(address).is_none() {
+            let solana_address = if *address == self.contract_id {
+                Pubkey::find_program_address(&[&address.to_fixed_bytes()], &self.program_id).0
+            } else {
+                let seed = bs58::encode(&address.to_fixed_bytes()).into_string();
+                Pubkey::create_with_seed(&self.base_account, &seed, &self.program_id).unwrap()
+            };
 
-            //let (solana_address, _) = Pubkey::find_program_address(&[&address.to_fixed_bytes()], &self.program_id);
-            let seed = bs58::encode(&address.to_fixed_bytes()).into_string();
-            let solana_address = Pubkey::create_with_seed(&self.base_account, &seed, &self.program_id).unwrap();
+            eprintln!("Not found account for 0x{} => {}", &hex::encode(&address.as_fixed_bytes()), &solana_address.to_string());
 
-            eprintln!("Not found account for {} => {} (seed {})", &address.to_string(), &solana_address.to_string(), &seed);
-            
             match self.rpc_client.get_account(&solana_address) {
                 Ok(acc) => {
-                    eprintln!("Account found");                        
+                    eprintln!("Account found");
                     eprintln!("Account data len {}", acc.data.len());
                     eprintln!("Account owner {}", acc.owner.to_string());
-                   
-                    accounts.insert(address.clone(), SolanaAccount::new(acc, solana_address));
+
+                    let code_key= SolidityAccount::get_code_account(&acc.data).unwrap();
+
+                    let code_account = if code_key == Pubkey::new_from_array([0u8; 32]) {
+                        eprintln!("code_account == Pubkey::new_from_array([0u8; 32])");
+                        None
+                    } else {
+                        eprintln!("code_account != Pubkey::new_from_array([0u8; 32])");
+                        eprintln!("account key:  {}", &solana_address.to_string());
+                        eprintln!("code account: {}", &code_key.to_string());
+
+                        match self.rpc_client.get_account(&code_key) {
+                            Ok(acc) => {
+                                eprintln!("Account found");
+                                Some(acc)
+                            },
+                            Err(_) => {
+                                eprintln!("Account not found");
+                                None
+                            }
+                        }
+                    };
+
+                    accounts.insert(address.clone(), SolanaAccount::new(acc, solana_address, code_account));
 
                     true
                 },
