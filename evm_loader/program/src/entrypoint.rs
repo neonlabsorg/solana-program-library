@@ -145,10 +145,34 @@ fn process_instruction<'a>(
 
             debug_print!(&("Ether:".to_owned()+&(hex::encode(ether))+" "+&hex::encode([nonce])));
 
-            let expected_address = Pubkey::create_program_address(&[ether.as_bytes(), &[nonce]], program_id)?;
-            if expected_address != *program_info.key {
-                return Err(ProgramError::InvalidArgument);
-            };
+            {// Do checks
+                let expected_address = Pubkey::create_program_address(&[ether.as_bytes(), &[nonce]], program_id)?;
+                if expected_address != *program_info.key {
+                    debug_print!("expected_address != *program_info.key");
+                    return Err(ProgramError::InvalidArgument);
+                };
+
+                let seed = bs58::encode(&ether.to_fixed_bytes()).into_string();
+                let expected_code_address = Pubkey::create_with_seed(&funding_info.key, &seed, &program_id)?;
+                if expected_code_address != *program_code.key {
+                    debug_print!("expected_code_address != *program_code.key");
+                    return Err(ProgramError::InvalidArgument);
+                };
+
+                let data = program_code.data.borrow();
+                let data_slice = &data[..32];
+                if data_slice != expected_address.as_ref() {
+                    debug_print!(&("Ether:".to_owned()+&data_slice.len().to_string()));
+                    debug_print!(&("Ether:".to_owned()+&(hex::encode(data_slice))));
+                    debug_print!(&("Ether:".to_owned()+&(hex::encode(expected_address.as_ref()))));
+
+                    let zero_arr: [u8; 32] = [0; 32];
+                    if data[..32] != zero_arr {
+                        debug_print!("Program code stored public key not contract key nor zero");
+                        return Err(ProgramError::InvalidArgument);
+                    }
+                }
+            }
 
             let program_seeds = [ether.as_bytes(), &[nonce]];
             invoke_signed(
@@ -215,9 +239,9 @@ fn process_instruction<'a>(
         EvmInstruction::Write {offset, bytes} => {
             let program_info = next_account_info(account_info_iter)?;
             let program_code = next_account_info(account_info_iter)?;
-            if program_info.owner != program_id {
-                return Err(ProgramError::InvalidArgument);
-            }
+
+            check_contract_and_code_keys(program_id, program_info, program_code)?;
+
             do_write(program_code, offset, &bytes)
         },
         EvmInstruction::Finalize => {
@@ -230,6 +254,8 @@ fn process_instruction<'a>(
             let account_info_iter = &mut accounts.iter();
             let trx_info = next_account_info(account_info_iter)?;
             //let caller_info = next_account_info(account_info_iter)?;
+
+            // check_contract_and_code_keys(program_id, program_info, program_code)?;
 
             let unsigned_msg = {
                 let data = trx_info.data.borrow();
@@ -490,9 +516,7 @@ fn do_finalize<'a>(program_id: &Pubkey, accounts: &'a [AccountInfo<'a>]) -> Prog
     let clock_info = next_account_info(account_info_iter)?;
     let rent_info = next_account_info(account_info_iter)?;
 
-    if program_info.owner != program_id {
-        return Err(ProgramError::InvalidArgument);
-    }
+    check_contract_and_code_keys(program_id, program_info, program_code)?;
 
     let account_storage = RefCell::new(ProgramAccountStorage::new(program_id, accounts, clock_info)?);
 
@@ -570,9 +594,7 @@ fn do_call<'a>(
     let sysvar_info = next_account_info(account_info_iter)?;
     let clock_info = next_account_info(account_info_iter)?;
 
-    if program_info.owner != program_id {
-        return Err(ProgramError::InvalidArgument);
-    }
+    check_contract_and_code_keys(program_id, program_info, program_code)?;
 
     let account_storage = RefCell::new(ProgramAccountStorage::new(program_id, accounts, accounts.last().unwrap())?);
 
@@ -747,6 +769,24 @@ fn get_ether_address<'a>(
 
         Some ( ( keccak256_digest(&caller_info.key.to_bytes()).into(), false) )
     }
+}
+
+fn check_contract_and_code_keys<'a>(
+    program_id: &Pubkey,
+    program_info: &'a AccountInfo<'a>,
+    program_code: &'a AccountInfo<'a>,
+) -> ProgramResult
+{ // do checks
+    if program_info.owner != program_id {
+        return Err(ProgramError::InvalidArgument);
+    }
+    if *program_code.key != SolidityAccount::get_code_account(&program_info.data.borrow())? {
+        return Err(ProgramError::InvalidArgument);
+    }
+    if &program_code.data.borrow()[..32] != program_info.key.as_ref() {
+        return Err(ProgramError::InvalidArgument);
+    }
+    Ok(())
 }
 
 // Pull in syscall stubs when building for non-BPF targets
