@@ -1,15 +1,9 @@
-use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
 use std::rc::Rc;
 
 use primitive_types::{H160, H256, U256};
-use sha3::{Digest, Keccak256};
-
-use crate::solana_backend::SolanaBackend;
-use crate::executor_state::{ StackState, ExecutorState, ExecutorMetadata};
-
-use evm::{backend::Backend, Capture, ExitError, ExitReason, ExitSucceed, ExitFatal, Handler};
-
+use evm::{Capture, ExitError, ExitReason, ExitSucceed, ExitFatal, Handler, backend::Backend};
+use crate::executor_state::{ StackState, ExecutorState, ExecutorMetadata };
 
 macro_rules! try_or_fail {
     ( $e:expr ) => {
@@ -28,12 +22,12 @@ fn l64(gas: u64) -> u64 {
 struct CallInterrupt {}
 struct CreateInterrupt {}
 
-struct Executor<'config, State: StackState> {
-    state: Box<State>,
+struct Executor<'config, B: Backend> {
+    state: ExecutorState<B>,
     config: &'config evm::Config,
 }
 
-impl<'config, State: StackState> Handler for Executor<'config, State> {
+impl<'config, B: Backend> Handler for Executor<'config, B> {
     type CreateInterrupt = crate::executor::CreateInterrupt;
     type CreateFeedback = Infallible;
     type CallInterrupt = crate::executor::CallInterrupt;
@@ -195,21 +189,28 @@ impl<'config, State: StackState> Handler for Executor<'config, State> {
 }
 
 
-pub struct Machine<'config, State: StackState> {
-    executor: Executor<'config, State>,
+pub struct Machine<'config, B: Backend> {
+    executor: Executor<'config, B>,
     runtime: Vec<evm::Runtime<'config>>
 }
 
 
-impl<'config, State: StackState> Machine<'config, State> {
+impl<'config, B: Backend> Machine<'config, B> {
 
-    pub fn new(state: Box<State>, config: &'config evm::Config) -> Box<Self> {
-        let executor = Executor { state, config };
-        Box::new(Self{ executor, runtime: Vec::new() })
+    pub fn new(state: ExecutorState<B>) -> Self {
+        let executor = Executor { state, config: evm::Config::default() };
+        Self{ executor, runtime: Vec::new() }
     }
 
-    pub fn restore(pointer: *mut Self) -> Box<Self> {
-        unsafe { Box::from_raw(pointer) }
+    pub fn save(&self) -> (Vec<u8>, Vec<u8>) {
+        let machine_data = bincode::serialize(&self.runtime).unwrap();
+        let executor_state_data = self.executor.state.save();
+        (machine_data, executor_state_data)
+    }
+
+    pub fn restore(data: &[u8], state: ExecutorState<B>) -> Self {
+        let executor = Executor { state, config: evm::Config::default() };
+        Self{ executor, runtime: bincode::deserialize(data).unwrap() }
     }
 
     pub fn call_begin(&mut self, caller: H160, code_address: H160, input: Vec<u8>, gas_limit: u64) {
@@ -281,7 +282,7 @@ impl<'config, State: StackState> Machine<'config, State> {
         Vec::new()
     }
 
-    pub fn into_state(self) -> Box<State> {
+    pub fn into_state(self) -> ExecutorState<B> {
         self.executor.state
     }
 }

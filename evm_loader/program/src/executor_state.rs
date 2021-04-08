@@ -1,22 +1,23 @@
 use std::{
     boxed::Box,
     collections::{BTreeMap, BTreeSet},
-    vec::Vec,
-    rc::Rc
+    vec::Vec
 };
 use core::mem;
 use evm::backend::{Apply, Backend, Basic, Log};
-use evm::{ExitError, Transfer, Config};
+use evm::{ExitError, Transfer};
 use primitive_types::{H160, H256, U256};
 use sha3::{Digest, Keccak256};
+use serde::{Serialize, Deserialize};
 
-#[derive(Clone, Debug)]
-struct MemoryStackAccount {
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct ExecutorAccount {
     pub basic: Basic,
     pub code: Option<Vec<u8>>,
     pub reset: bool,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ExecutorMetadata {
     // gasometer: Gasometer<'config>,
     is_static: bool,
@@ -83,11 +84,12 @@ impl ExecutorMetadata {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ExecutorSubstate {
     metadata: ExecutorMetadata,
     parent: Option<Box<ExecutorSubstate>>,
     logs: Vec<Log>,
-    accounts: BTreeMap<H160, MemoryStackAccount>,
+    accounts: BTreeMap<H160, ExecutorAccount>,
     storages: BTreeMap<(H160, H256), H256>,
     deletes: BTreeSet<H160>,
 }
@@ -117,7 +119,7 @@ impl ExecutorSubstate {
     #[must_use]
     pub fn deconstruct<B: Backend>(
         mut self,
-        backend: Rc<B>,
+        backend: &B,
     ) -> (
         impl IntoIterator<Item = Apply<impl IntoIterator<Item = (H256, H256)>>>,
         impl IntoIterator<Item = Log>,
@@ -149,7 +151,7 @@ impl ExecutorSubstate {
             }
 
             let apply = {
-                let account = self.account_mut(address, backend.clone());
+                let account = self.account_mut(address, backend);
 
                 Apply::Modify {
                     address,
@@ -232,7 +234,7 @@ impl ExecutorSubstate {
         Ok(())
     }
 
-    fn known_account(&self, address: H160) -> Option<&MemoryStackAccount> {
+    fn known_account(&self, address: H160) -> Option<&ExecutorAccount> {
         if let Some(account) = self.accounts.get(&address) {
             Some(account)
         } else if let Some(parent) = self.parent.as_ref() {
@@ -316,7 +318,7 @@ impl ExecutorSubstate {
         false
     }
 
-    fn account_mut<B: Backend>(&mut self, address: H160, backend: Rc<B>) -> &mut MemoryStackAccount {
+    fn account_mut<B: Backend>(&mut self, address: H160, backend: &B) -> &mut ExecutorAccount {
         if !self.accounts.contains_key(&address) {
             let account = self
                 .known_account(address)
@@ -325,7 +327,7 @@ impl ExecutorSubstate {
                     v.reset = false;
                     v
                 })
-                .unwrap_or_else(|| MemoryStackAccount {
+                .unwrap_or_else(|| ExecutorAccount {
                     basic: backend.basic(address),
                     code: None,
                     reset: false,
@@ -338,7 +340,7 @@ impl ExecutorSubstate {
             .expect("New account was just inserted")
     }
 
-    pub fn inc_nonce<B: Backend>(&mut self, address: H160, backend: Rc<B>) {
+    pub fn inc_nonce<B: Backend>(&mut self, address: H160, backend: &B) {
         self.account_mut(address, backend).basic.nonce += U256::one();
     }
 
@@ -346,7 +348,7 @@ impl ExecutorSubstate {
         self.storages.insert((address, key), value);
     }
 
-    pub fn reset_storage<B: Backend>(&mut self, address: H160, backend: Rc<B>) {
+    pub fn reset_storage<B: Backend>(&mut self, address: H160, backend: &B) {
         let mut removing = Vec::new();
 
         for (oa, ok) in self.storages.keys() {
@@ -374,17 +376,17 @@ impl ExecutorSubstate {
         self.deletes.insert(address);
     }
 
-    pub fn set_code<B: Backend>(&mut self, address: H160, code: Vec<u8>, backend: Rc<B>) {
+    pub fn set_code<B: Backend>(&mut self, address: H160, code: Vec<u8>, backend: &B) {
         self.account_mut(address, backend).code = Some(code);
     }
 
     pub fn transfer<B: Backend>(
         &mut self,
         transfer: Transfer,
-        backend: Rc<B>,
+        backend: &B,
     ) -> Result<(), ExitError> {
         {
-            let source = self.account_mut(transfer.source, backend.clone());
+            let source = self.account_mut(transfer.source, backend);
             if source.basic.balance < transfer.value {
                 return Err(ExitError::OutOfFund);
             }
@@ -392,7 +394,7 @@ impl ExecutorSubstate {
         }
 
         {
-            let target = self.account_mut(transfer.target, backend.clone());
+            let target = self.account_mut(transfer.target, backend);
             target.basic.balance = target.basic.balance.saturating_add(transfer.value);
         }
 
@@ -404,7 +406,7 @@ impl ExecutorSubstate {
         &mut self,
         address: H160,
         value: U256,
-        backend: Rc<B>,
+        backend: &B,
     ) -> Result<(), ExitError> {
         let source = self.account_mut(address, backend);
         if source.basic.balance < value {
@@ -416,16 +418,16 @@ impl ExecutorSubstate {
     }
 
     // Only needed for jsontests.
-    pub fn deposit<B: Backend>(&mut self, address: H160, value: U256, backend: Rc<B>) {
+    pub fn deposit<B: Backend>(&mut self, address: H160, value: U256, backend: &B) {
         let target = self.account_mut(address, backend);
         target.basic.balance = target.basic.balance.saturating_add(value);
     }
 
-    pub fn reset_balance<B: Backend>(&mut self, address: H160, backend: Rc<B>) {
+    pub fn reset_balance<B: Backend>(&mut self, address: H160, backend: &B) {
         self.account_mut(address, backend).basic.balance = U256::zero();
     }
 
-    pub fn touch<B: Backend>(&mut self, address: H160, backend: Rc<B>) {
+    pub fn touch<B: Backend>(&mut self, address: H160, backend: &B) {
         self.account_mut(address, backend);
     }
 }
@@ -455,7 +457,7 @@ pub trait StackState : Backend {
 }
 
 pub struct ExecutorState<B: Backend> {
-    backend: Rc<B>,
+    backend: B,
     substate: ExecutorSubstate,
 }
 
@@ -580,7 +582,7 @@ impl<B: Backend> StackState for ExecutorState<B> {
     }
 
     fn inc_nonce(&mut self, address: H160) {
-        self.substate.inc_nonce(address, self.backend.clone());
+        self.substate.inc_nonce(address, &self.backend);
     }
 
     fn set_storage(&mut self, address: H160, key: H256, value: H256) {
@@ -588,7 +590,7 @@ impl<B: Backend> StackState for ExecutorState<B> {
     }
 
     fn reset_storage(&mut self, address: H160) {
-        self.substate.reset_storage(address, self.backend.clone());
+        self.substate.reset_storage(address, &self.backend);
     }
 
     fn original_storage(&self, address: H160, key: H256) -> Option<H256> {
@@ -608,49 +610,57 @@ impl<B: Backend> StackState for ExecutorState<B> {
     }
 
     fn set_code(&mut self, address: H160, code: Vec<u8>) {
-        self.substate.set_code(address, code, self.backend.clone())
+        self.substate.set_code(address, code, &self.backend)
     }
 
     fn transfer(&mut self, transfer: Transfer) -> Result<(), ExitError> {
-        self.substate.transfer(transfer, self.backend.clone())
+        self.substate.transfer(transfer, &self.backend)
     }
 
     fn reset_balance(&mut self, address: H160) {
-        self.substate.reset_balance(address, self.backend.clone())
+        self.substate.reset_balance(address, &self.backend)
     }
 
     fn touch(&mut self, address: H160) {
-        self.substate.touch(address, self.backend.clone())
+        self.substate.touch(address, &self.backend)
     }
 }
 
 impl<B: Backend> ExecutorState<B> {
-    pub fn new(metadata: ExecutorMetadata, backend: Rc<B>) -> Box<Self> {
-        Box::new(Self {
+    pub fn new(metadata: ExecutorMetadata, backend: B) -> Self {
+        Self {
             backend,
             substate: ExecutorSubstate::new(metadata),
-        })
+        }
     }
 
-    pub fn backend(&self) -> Rc<B> {
-        self.backend().clone()
+    pub fn save(&self) -> Vec<u8> {
+        bincode::serialize(&self.substate).unwrap()
+    }
+
+    pub fn restore(data: &[u8], backend: B) -> Self {
+        Self {
+            backend,
+            substate: bincode::deserialize(data).unwrap()
+        }
     }
 
     #[must_use]
     pub fn deconstruct(
         self,
-    ) -> (
+    ) -> (B, (
         impl IntoIterator<Item = Apply<impl IntoIterator<Item = (H256, H256)>>>,
         impl IntoIterator<Item = Log>,
-    ) {
-        self.substate.deconstruct(self.backend.clone())
+    )) {
+        let (applies, logs) = self.substate.deconstruct(&self.backend);
+        (self.backend, (applies, logs))
     }
 
     pub fn withdraw(&mut self, address: H160, value: U256) -> Result<(), ExitError> {
-        self.substate.withdraw(address, value, self.backend.clone())
+        self.substate.withdraw(address, value, &self.backend)
     }
 
     pub fn deposit(&mut self, address: H160, value: U256) {
-        self.substate.deposit(address, value, self.backend.clone())
+        self.substate.deposit(address, value, &self.backend)
     }
 }
