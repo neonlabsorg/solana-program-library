@@ -1,6 +1,5 @@
 //! Program state processor
 
-#![cfg(feature = "program")]
 
 use crate::{
     error::MetamaskError,
@@ -9,8 +8,8 @@ use crate::{
 };
 use num_traits::FromPrimitive;
 #[cfg(target_arch = "bpf")]
-use solana_sdk::program::invoke_signed;
-use solana_sdk::{
+use solana_program::program::invoke_signed;
+use solana_program::{
     account_info::{next_account_info, AccountInfo},
     decode_error::DecodeError,
     entrypoint::ProgramResult,
@@ -45,7 +44,7 @@ impl Processor {
         let seeds = [&eth_acc[..20], &[nonce]];
         let signers = &[&seeds[..]];
 
-        let ix = solana_sdk::system_instruction::create_account(
+        let ix = solana_program::system_instruction::create_account(
             user.key, 
             account_info.key,
             rent.minimum_balance(AccInfo::LEN),
@@ -90,7 +89,7 @@ impl Processor {
         let seeds = [&eth_token[..20], &[nonce]];
         let signers = &[&seeds[..]];
 
-        let ix = solana_sdk::system_instruction::create_account(
+        let ix = solana_program::system_instruction::create_account(
             user.key, 
             token_info.key,
             rent.minimum_balance(TokenInfo::LEN),
@@ -136,7 +135,7 @@ impl Processor {
         let acc = Pubkey::create_program_address(&seeds, program_id).unwrap();
         info!(&bs58::encode(acc).into_string());
 
-        let ix = solana_sdk::system_instruction::create_account(
+        let ix = solana_program::system_instruction::create_account(
             user.key, 
             account_info_acc.key,
             rent.minimum_balance(BalanceInfo::LEN),
@@ -206,7 +205,7 @@ impl Processor {
 
         let seeds = [&eth_acc[..20], "lamports".as_ref(), &[nonce]];
         let signers = &[&seeds[..]];
-        let ix = solana_sdk::system_instruction::transfer(
+        let ix = solana_program::system_instruction::transfer(
             source.key,
             destination.key,
             amount,
@@ -268,4 +267,4 @@ impl PrintProgramError for MetamaskError {
 
 // Pull in syscall stubs when building for non-BPF targets
 #[cfg(not(target_arch = "bpf"))]
-solana_sdk::program_stubs!();
+solana_program::program_stubs!();

@@ -6,7 +6,7 @@ use crate::{
 };
 use curve25519_dalek::{ristretto::RistrettoPoint, scalar::Scalar};
 use elgamal_ristretto::public::PublicKey;
-use solana_sdk::{
+use solana_program::{
     account_info::{next_account_info, AccountInfo},
     program_error::ProgramError,
     pubkey::Pubkey,
@@ -88,9 +88,9 @@ fn process_request_payment(
 }
 
 /// Process the given transaction instruction
-pub fn process_instruction<'a>(
+pub fn process_instruction(
     _program_id: &Pubkey,
-    account_infos: &'a [AccountInfo<'a>],
+    account_infos: &[AccountInfo],
     input: &[u8],
 ) -> Result<(), ProgramError> {
     let account_infos_iter = &mut account_infos.iter();
