@@ -92,11 +92,11 @@ class DeployTest(unittest.TestCase):
     def test_executeTrxFromAccountData(self):
         # Create transaction holder account (if not exists)
         seed = "1236"
-        holder = PublicKey(sha256(bytes(self.acc.public_key())+bytes(seed, 'utf8')+bytes(PublicKey(evm_loader_id))).digest())
+        holder = PublicKey(sha256(bytes(self.acc.public_key())+bytes(seed, 'utf8')+bytes(PublicKey(self.loader.loader_id))).digest())
         print("Holder", holder)
         if getBalance(holder) == 0:
             trx = Transaction()
-            trx.add(createAccountWithSeed(self.acc.public_key(), self.acc.public_key(), "1236", 10**9, 128*1024, PublicKey(evm_loader_id)))
+            trx.add(createAccountWithSeed(self.acc.public_key(), self.acc.public_key(), "1236", 10**9, 128*1024, PublicKey(self.loader.loader_id)))
             result = http_client.send_transaction(trx, self.acc, opts=TxOpts(skip_confirmation=False))
             print(result)
 
@@ -134,7 +134,7 @@ class DeployTest(unittest.TestCase):
         while len(rest):
             (part, rest) = (rest[:1000], rest[1000:])
             trx = Transaction()
-            trx.add(TransactionInstruction(program_id=evm_loader_id,
+            trx.add(TransactionInstruction(program_id=self.loader.loader_id,
                 data=write_layout(offset, part),
                 keys=[
                     AccountMeta(pubkey=holder, is_signer=False, is_writable=True),
@@ -151,8 +151,8 @@ class DeployTest(unittest.TestCase):
         trx = Transaction()
         base = self.acc.public_key()
         seed = str(b58encode(contract_eth))
-        trx.add(createAccountWithSeed(base, base, seed, 10**9, 65+len(msg)+2048, PublicKey(evm_loader_id)))
-        trx.add(TransactionInstruction(program_id=evm_loader_id,
+        trx.add(createAccountWithSeed(base, base, seed, 10**9, 65+len(msg)+2048, PublicKey(self.loader.loader_id)))
+        trx.add(TransactionInstruction(program_id=self.loader.loader_id,
             #data=create_account_layout(10**9, len(msg)+2048, contract_eth, contract_nonce),
             data=bytes.fromhex('66000000')+CREATE_ACCOUNT_LAYOUT.build(dict(
                 lamports=10**0,
@@ -164,13 +164,13 @@ class DeployTest(unittest.TestCase):
                 AccountMeta(pubkey=contract_sol, is_signer=False, is_writable=True),
                 #AccountMeta(pubkey=system, is_signer=False, is_writable=False),
             ]))
-        trx.add(TransactionInstruction(program_id=evm_loader_id,
+        trx.add(TransactionInstruction(program_id=self.loader.loader_id,
             data=bytes.fromhex('08'),
             keys=[
                 AccountMeta(pubkey=holder, is_signer=False, is_writable=True),
                 AccountMeta(pubkey=self.caller, is_signer=False, is_writable=True),
                 AccountMeta(pubkey=contract_sol, is_signer=False, is_writable=True),
-                AccountMeta(pubkey=evm_loader_id, is_signer=False, is_writable=False),
+                AccountMeta(pubkey=self.loader.loader_id, is_signer=False, is_writable=False),
                 AccountMeta(pubkey=PublicKey(sysvarclock), is_signer=False, is_writable=False),
             ]))
         result = http_client.send_transaction(trx, self.acc,

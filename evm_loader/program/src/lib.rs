@@ -1,5 +1,5 @@
-#![deny(missing_docs)]
-//#![forbid(unsafe_code)]
+// #![deny(missing_docs)]
+// #![forbid(unsafe_code)]
 
 
 
@@ -13,11 +13,13 @@ pub mod entrypoint;
 //pub mod processor;
 //pub mod state;
 mod hamt;
-mod solana_backend;
+pub mod solana_backend;
 mod account_data;
-mod solidity_account;
+mod account_storage;
+pub mod solidity_account;
 mod instruction;
 mod transaction;
+pub mod utils;
 
 
 // Export current solana-sdk types for downstream users who may also be building with a different
