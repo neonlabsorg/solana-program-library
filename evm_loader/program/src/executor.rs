@@ -2,7 +2,7 @@ use std::convert::Infallible;
 use std::rc::Rc;
 
 use primitive_types::{H160, H256, U256};
-use evm::{Capture, ExitError, ExitReason, ExitSucceed, ExitFatal, Handler, backend::Backend};
+use evm::{Capture, ExitError, ExitReason, ExitSucceed, ExitFatal, Handler, Resolve, backend::Backend};
 use crate::executor_state::{ StackState, ExecutorState, ExecutorMetadata };
 
 macro_rules! try_or_fail {
@@ -19,7 +19,12 @@ fn l64(gas: u64) -> u64 {
 }
 
 
-struct CallInterrupt {}
+struct CallInterrupt {
+    code_address : H160,
+    input : Vec<u8>,
+    context: evm::Context,
+}
+
 struct CreateInterrupt {}
 
 struct Executor<'config, B: Backend> {
@@ -163,7 +168,7 @@ impl<'config, B: Backend> Handler for Executor<'config, B> {
             }
         }
 
-        Capture::Trap(CallInterrupt{})
+        Capture::Trap(CallInterrupt{code_address, input, context})
     }
 
     fn pre_validate(
@@ -247,30 +252,72 @@ impl<'config, B: Backend> Machine<'config, B> {
         self.runtime.push(runtime);
     }
 
-    pub fn step(&mut self) -> Result<(), ExitReason> {
+    pub fn step(&mut self, return_value: &mut Vec<u8>) -> Result<(), ExitReason> {
 
+        enum modify<'a>{
+            none,
+            add(evm::Runtime<'a>),
+            remove,
+        }
+        let mut runtime_modify = modify::none;
+
+        let mut ret_val = Vec::new();
+        if let Some(runtime_unmut) = self.runtime.last() {
+            // TODO: return value is not actual
+            ret_val  =  runtime_unmut.machine().return_value();
+        }
+
+        let mut result : Result<(), ExitReason> = Err(ExitReason::Fatal(ExitFatal::NotSupported));
+        let runtime_complete = false;
         if let Some(runtime) = self.runtime.last_mut() {
             match runtime.step(&mut self.executor) {
-                Ok(()) => return Ok(()),
+                Ok(()) => result = Ok(()),
                 Err(capture) => match capture {
                     Capture::Exit(reason) => {
+                        *return_value = ret_val;
                         match &reason {
-                            ExitReason::Succeed(_) => {
+                            ExitReason::Succeed(res) => {
+                                match res {
+                                    ExitSucceed::Stopped => {
+                                        runtime_modify = modify::remove;
+                                    },
+                                    _ => {}
+                                }
                                 self.executor.state.exit_commit().unwrap();
                                 // todo call interrupt
                             },
                             ExitReason::Error(_) => self.executor.state.exit_discard().unwrap(),
                             ExitReason::Revert(_) => self.executor.state.exit_revert().unwrap(),
-                            ExitReason::Fatal(_) => self.executor.state.exit_discard().unwrap()
+                            ExitReason::Fatal(_) => self.executor.state.exit_discard().unwrap(),
                         }
-                        return Err(reason);
+                        result =  Err(reason);
                     },
-                    Capture::Trap(resolve) => return Err(ExitReason::Fatal(ExitFatal::NotSupported)) // todo
+                    Capture::Trap(interrupt) => match interrupt{
+                        Resolve::Call(interrupt, resolve) =>{
+                            let code = self.executor.code(interrupt.code_address);
+
+                            let runtime = evm::Runtime::new(
+                                Rc::new(code),
+                                Rc::new(interrupt.input),
+                                interrupt.context,
+                                &self.executor.config
+                            );
+                            runtime_modify = modify::add(runtime);
+                            result = Ok(());
+                        },
+                        _ => {
+                            result = Err(ExitReason::Fatal(ExitFatal::NotSupported))
+                        }
+                    }
                 }
             }
         }
-
-        Err(ExitReason::Fatal(ExitFatal::NotSupported))
+        match runtime_modify {
+            modify::remove => {self.runtime.pop(); debug_print!("self.runtime.pop()")},
+            modify::add(runtime) => {self.runtime.push(runtime); debug_print!("self.runtime.push()")},
+            modify::none => {},
+        }
+        return result;
     }
 
     #[must_use]
@@ -284,5 +331,9 @@ impl<'config, B: Backend> Machine<'config, B> {
 
     pub fn into_state(self) -> ExecutorState<B> {
         self.executor.state
+    }
+
+    pub fn runtime_is_empty(&self) -> bool{
+        return self.runtime.is_empty();
     }
 }

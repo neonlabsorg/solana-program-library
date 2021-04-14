@@ -562,15 +562,71 @@ fn do_call<'a>(
 
     debug_print!("Executor restored");
 
-    let mut exit_reason = ExitReason::Fatal(ExitFatal::NotSupported);
-    loop {
-        if let Err(reason) = executor.step() {
-            exit_reason = reason;
-            break;
-        }
-    }
+    // let mut exit_reason = ExitReason::Fatal(ExitFatal::NotSupported);
+    // loop {
+    //     if let Err(reason) = executor.step() {
+    //         exit_reason = reason;
+    //         break;
+    //     }
+    // }
     let result = executor.return_value();
 
+    // executor.call_begin(caller_ether.0, contract.get_ether(), instruction_data.to_vec(), u64::max_value());
+
+    let mut exit_reason = ExitReason::Fatal(ExitFatal::NotSupported);
+    let mut result = Vec::new();
+
+    loop {
+        // match executor.step(&mut result) {
+        //     Err(reason) => {
+        //         exit_reason = reason.clone();
+        //         match &reason {
+        //             ExitReason::Succeed(res) => {
+        //                 if (executor.runtime_is_empty()){
+        //                     break;
+        //                 }
+        //             },
+        //             _ => {break;}
+        //         }
+        //     },
+        //     _ =>  {},
+        // }
+        // if let Err(reason) = executor.step(&mut result) {
+        //     exit_reason = reason;
+        //     break;
+        // }
+        if let Err(reason) = executor.step(&mut result) {
+            if let ExitReason::Succeed(res) = reason {
+                if (executor.runtime_is_empty()){
+                    debug_print!("executor.runtime_is_empty");
+                    exit_reason = reason;
+                    break;
+                }
+                else {
+                    debug_print!("executor.runtime_is_not_empty()")
+                }
+
+            }
+            // match reason {
+            //     ExitReason::Succeed(res) => {
+            //         debug_print!("ExitReason::Succeed(res)");
+            //         if (executor.runtime_is_empty()){
+            //             debug_print!("executor.runtime_is_empty");
+            //             exit_reason = reason;
+            //             break;
+            //         }
+            //         else {
+            //             debug_print!("executor.runtime_is_not_empty()")
+            //         }
+            //     },
+            //     _ => {
+            //         debug_print!("ExitReason::other");
+            //         exit_reason = reason;
+            //         break;
+            //     }
+            // }
+        }
+    }
 
     debug_print!("Call done");
 
