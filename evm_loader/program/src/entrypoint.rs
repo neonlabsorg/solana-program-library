@@ -571,56 +571,10 @@ fn do_call<'a>(
 
     let mut exit_reason = ExitReason::Fatal(ExitFatal::NotSupported);
     let mut result = Vec::new();
-
     loop {
-        // match executor.step(&mut result) {
-        //     Err(reason) => {
-        //         exit_reason = reason.clone();
-        //         match &reason {
-        //             ExitReason::Succeed(res) => {
-        //                 if (executor.runtime_is_empty()){
-        //                     break;
-        //                 }
-        //             },
-        //             _ => {break;}
-        //         }
-        //     },
-        //     _ =>  {},
-        // }
-        // if let Err(reason) = executor.step(&mut result) {
-        //     exit_reason = reason;
-        //     break;
-        // }
         if let Err(reason) = executor.step(&mut result) {
-            if let ExitReason::Succeed(res) = reason {
-                if (executor.runtime_is_empty()){
-                    debug_print!("executor.runtime_is_empty");
-                    exit_reason = reason;
-                    break;
-                }
-                else {
-                    debug_print!("executor.runtime_is_not_empty()")
-                }
-
-            }
-            // match reason {
-            //     ExitReason::Succeed(res) => {
-            //         debug_print!("ExitReason::Succeed(res)");
-            //         if (executor.runtime_is_empty()){
-            //             debug_print!("executor.runtime_is_empty");
-            //             exit_reason = reason;
-            //             break;
-            //         }
-            //         else {
-            //             debug_print!("executor.runtime_is_not_empty()")
-            //         }
-            //     },
-            //     _ => {
-            //         debug_print!("ExitReason::other");
-            //         exit_reason = reason;
-            //         break;
-            //     }
-            // }
+            exit_reason = reason;
+            break;
         }
     }
 

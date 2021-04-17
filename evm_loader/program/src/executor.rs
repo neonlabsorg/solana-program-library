@@ -1,6 +1,9 @@
+
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
 use std::rc::Rc;
+use evm_runtime::{return_value_to_memory};
 
 use primitive_types::{H160, H256, U256};
 use sha3::{Digest, Keccak256};
@@ -9,7 +12,7 @@ use crate::solana_backend::SolanaBackend;
 use crate::executor_state::{ StackState, ExecutorState, ExecutorMetadata};
 
 use evm::{backend::Backend, Capture, ExitError, ExitReason, ExitSucceed, ExitFatal, Handler, Resolve};
-
+use std::mem;
 
 macro_rules! try_or_fail {
     ( $e:expr ) => {
@@ -256,44 +259,44 @@ impl<'config, State: StackState> Machine<'config, State> {
         enum modify<'a>{
             none,
             add(evm::Runtime<'a>),
-            remove,
+            remove(ExitReason),
         }
         let mut runtime_modify = modify::none;
 
-        let mut ret_val = Vec::new();
-        if let Some(runtime_unmut) = self.runtime.last() {
-            // TODO: return value is not actual
-            ret_val  =  runtime_unmut.machine().return_value();
-        }
-
-        let mut result : Result<(), ExitReason> = Err(ExitReason::Fatal(ExitFatal::NotSupported));
-        let runtime_complete = false;
         if let Some(runtime) = self.runtime.last_mut() {
             match runtime.step(&mut self.executor) {
-                Ok(()) => result = Ok(()),
+                Ok(()) => {},
                 Err(capture) => match capture {
                     Capture::Exit(reason) => {
-                        *return_value = ret_val;
                         match &reason {
                             ExitReason::Succeed(res) => {
-                                match res {
-                                    ExitSucceed::Stopped => {
-                                        runtime_modify = modify::remove;
-                                    },
-                                    _ => {}
-                                }
+                                runtime_modify = modify::remove(reason.clone());
                                 self.executor.state.exit_commit().unwrap();
-                                // todo call interrupt
                             },
-                            ExitReason::Error(_) => self.executor.state.exit_discard().unwrap(),
-                            ExitReason::Revert(_) => self.executor.state.exit_revert().unwrap(),
-                            ExitReason::Fatal(_) => self.executor.state.exit_discard().unwrap(),
+                            ExitReason::Error(_) => {
+                                debug_print!("runtime.step: Err, capture Capture::Exit(reason), reason:ExitReason::Error(_)");
+                                self.executor.state.exit_discard().unwrap();
+                                return Err(reason.clone());
+                            },
+                            ExitReason::Revert(_) => {
+                                debug_print!("runtime.step: Err, capture Capture::Exit(reason), reason:ExitReason::Revert(_)");
+                                self.executor.state.exit_revert().unwrap();
+                                return Err(reason.clone());
+                            },
+                            ExitReason::Fatal(_) => {
+                                debug_print!("runtime.step: Err, capture Capture::Exit(reason), reason:ExitReason::Fatal(_)");
+                                self.executor.state.exit_discard().unwrap();
+                                return Err(reason.clone());
+                            }
                         }
-                        result =  Err(reason);
                     },
                     Capture::Trap(interrupt) => match interrupt{
                         Resolve::Call(interrupt, resolve) =>{
+                            mem::forget(resolve);
+                            debug_print!("runtime.step: Err, capture Capture::Trap(interrupt), interrupt: Resolve::Call(interrupt)");
                             let code = self.executor.code(interrupt.code_address);
+                            self.executor.state.enter(u64::max_value(), false);
+                            self.executor.state.touch(interrupt.code_address);
 
                             let runtime = evm::Runtime::new(
                                 Rc::new(code),
@@ -302,21 +305,45 @@ impl<'config, State: StackState> Machine<'config, State> {
                                 &self.executor.config
                             );
                             runtime_modify = modify::add(runtime);
-                            result = Ok(());
                         },
                         _ => {
-                            result = Err(ExitReason::Fatal(ExitFatal::NotSupported))
+                            debug_print!("runtime.step: Err, capture Capture::Trap(interrupt), interrupt: _");
+                            return Err(ExitReason::Fatal(ExitFatal::NotSupported));
                         }
                     }
                 }
             }
         }
+
         match runtime_modify {
-            modify::remove => {self.runtime.pop(); debug_print!("self.runtime.pop()")},
-            modify::add(runtime) => {self.runtime.push(runtime); debug_print!("self.runtime.push()")},
+            modify::remove(reason) => {
+                let mut call_return_value = Vec::new();
+                if let Some(runtime) = self.runtime.last(){
+                    call_return_value = runtime.machine().return_value();
+                };
+                self.runtime.pop();
+                if let Some(runtime) = self.runtime.last_mut(){
+                    let val =  return_value_to_memory(
+                        runtime,
+                        ExitReason::Succeed(ExitSucceed::Stopped),
+                        call_return_value,
+                        &self.executor
+                    );
+                    // TODO check val
+                }
+                else {
+                    debug_print!("runtime_modify: remove, ExitSuccess");
+                    *return_value = call_return_value;
+                    return Err(reason);
+                }
+            },
+            modify::add(runtime) => {
+                debug_print!("runtime_modify:  add");
+                self.runtime.push(runtime);
+            },
             modify::none => {},
         }
-        return result;
+        return Ok(());
     }
 
     #[must_use]
