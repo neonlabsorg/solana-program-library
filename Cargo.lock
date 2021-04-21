@@ -1026,7 +1026,7 @@ dependencies = [
  "log",
  "parity-scale-codec",
  "primitive-types",
- "rlp",
+ "rlp 0.4.6",
  "serde",
  "sha3 0.8.2",
 ]
@@ -1060,7 +1060,7 @@ dependencies = [
  "primitive-types",
  "rand 0.7.3",
  "remove_dir_all",
- "rlp",
+ "rlp 0.5.0",
  "serde",
  "serde_bytes",
  "serde_derive",
@@ -1691,7 +1691,7 @@ version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f7a72f11830b52333f36e3b09a288333888bf54380fd0ac0790a3c31ab0f3c5"
 dependencies = [
- "rlp",
+ "rlp 0.4.6",
 ]
 
 [[package]]
@@ -2996,6 +2996,16 @@ version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1190dcc8c3a512f1eef5d09bb8c84c7f39e1054e174d1795482e18f5272f2e73"
 dependencies = [
+ "rustc-hex",
+]
+
+[[package]]
+name = "rlp"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e54369147e3e7796c9b885c7304db87ca3d09a0a98f72843d532868675bbfba8"
+dependencies = [
+ "bytes 1.0.1",
  "rustc-hex",
 ]
 
