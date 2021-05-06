@@ -84,7 +84,7 @@ class EventTest(unittest.TestCase):
                 AccountMeta(pubkey=PublicKey(keccakprog), is_signer=False, is_writable=False), ])
 
     def call_signed(self, input):
-        tx = {'to': solana2ether(self.reId), 'value': 1, 'gas': 1, 'gasPrice': 1,
+        tx = {'to': self.reId, 'value': 1, 'gas': 1, 'gasPrice': 1,
             'nonce': getTransactionCount(http_client, self.caller), 'data': input, 'chainId': 111}
 
         (from_addr, sign, msg) = make_instruction_data_from_tx(tx, self.acc.secret_key())

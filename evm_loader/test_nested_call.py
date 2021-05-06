@@ -120,7 +120,7 @@ class EventTest(unittest.TestCase):
         return storage
 
     def call_partial_signed(self, input, contract, code):
-        tx = {'to': solana2ether(contract), 'value': 1, 'gas': 1, 'gasPrice': 1,
+        tx = {'to': contract, 'value': 1, 'gas': 1, 'gasPrice': 1,
             'nonce': getTransactionCount(http_client, self.caller), 'data': input, 'chainId': 111}
 
         (from_addr, sign, msg) = make_instruction_data_from_tx(tx, self.acc.secret_key())
@@ -137,7 +137,6 @@ class EventTest(unittest.TestCase):
         while (True):
             print("Continue")
             trx = Transaction()
-            trx.add(self.sol_instr_keccak(make_keccak_instruction_data(1, len(msg), 9)))
             trx.add(self.sol_instr_10_continue(storage, 400, instruction, contract, code))
             result = http_client.send_transaction(trx, self.acc, opts=TxOpts(skip_confirmation=False, preflight_commitment="root"))["result"]
 
