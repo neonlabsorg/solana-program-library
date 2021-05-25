@@ -34,6 +34,24 @@ EVM_LOADER_SO = os.environ.get("EVM_LOADER_SO", 'target/bpfel-unknown-unknown/re
 client = Client(solana_url)
 path_to_solana = 'solana'
 
+def confirm_transaction(client, tx_sig, confirmations=1):
+    """Confirm a transaction."""
+    TIMEOUT = 30  # 30 seconds  pylint: disable=invalid-name
+    elapsed_time = 0
+    while elapsed_time < TIMEOUT:
+        print('confirm_transaction for %s', tx_sig)
+        resp = client.get_signature_statuses([tx_sig])
+        print('confirm_transaction: %s', resp)
+        if resp["result"]:
+            status = resp['result']['value'][0]
+            if status and (status['confirmationStatus'] == 'finalized' or \
+               status['confirmationStatus'] == 'confirmed' and status['confirmations'] >= confirmations):
+                return
+        sleep_time = 1
+        time.sleep(sleep_time)
+        elapsed_time += sleep_time
+    raise RuntimeError("could not confirm transaction: ", tx_sig)
+
 def accountWithSeed(base, seed, program):
     print(type(base), type(seed), type(program))
     return PublicKey(sha256(bytes(base)+bytes(seed, 'utf8')+bytes(program)).digest())
@@ -283,25 +301,6 @@ def wallet_path():
         if line.startswith(substr):
             return line[len(substr):].strip()
     raise Exception("cannot get keypair path")
-
-
-def confirm_transaction(client, tx_sig, confirmations=1):
-    """Confirm a transaction."""
-    TIMEOUT = 30  # 30 seconds  pylint: disable=invalid-name
-    elapsed_time = 0
-    while elapsed_time < TIMEOUT:
-        print('confirm_transaction for %s', tx_sig)
-        resp = client.get_signature_statuses([tx_sig])
-        print('confirm_transaction: %s', resp)
-        if resp["result"]:
-            status = resp['result']['value'][0]
-            if status and (status['confirmationStatus'] == 'finalized' or \
-               status['confirmationStatus'] == 'confirmed' and status['confirmations'] >= confirmations):
-                return
-        sleep_time = 1
-        time.sleep(sleep_time)
-        elapsed_time += sleep_time
-    raise RuntimeError("could not confirm transaction: ", tx_sig)
 
 def send_transaction(client, trx, acc):
     result = client.send_transaction(trx, acc, opts=TxOpts(skip_confirmation=True, preflight_commitment="confirmed"))

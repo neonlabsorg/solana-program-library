@@ -1,9 +1,0 @@
---- solana/rpc/commitment.py	2021-05-21 18:04:43.670560310 +0300
-+++ solana/rpc/commitment.py	2021-05-21 18:04:55.495691742 +0300
-@@ -26,3 +26,5 @@
- 
- Recent = Commitment("recent")
- """The node will query its most recent bank."""
-+
-+Confirmed = Commitment("confirmed")
-\ No newline at end of file
