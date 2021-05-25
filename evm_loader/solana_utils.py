@@ -3,6 +3,7 @@ from solana.rpc.api import Client
 from solana.rpc.types import TxOpts
 from solana.account import Account
 from solana.publickey import PublicKey
+from solana.rpc.commitment import Confirmed
 import time
 import os
 import subprocess
@@ -229,7 +230,7 @@ class EvmLoader:
 
 
 def getBalance(account):
-    return client.get_balance(account)['result']['value']
+    return client.get_balance(account, commitment = Confirmed)['result']['value']
 
 def solana2ether(public_key):
     from web3 import Web3
@@ -257,7 +258,7 @@ class AccountInfo(NamedTuple):
         return AccountInfo(cont.eth_acc, cont.trx_count)
 
 def getAccountData(client, account, expected_length):
-    info = client.get_account_info(account)['result']['value']
+    info = client.get_account_info(account, commitment = Confirmed)['result']['value']
     if info is None:
         raise Exception("Can't get information about {}".format(account))
 
