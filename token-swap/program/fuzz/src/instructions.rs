@@ -77,11 +77,6 @@ const INITIAL_SWAP_TOKEN_B_AMOUNT: u64 = 300_000_000_000;
 const INITIAL_USER_TOKEN_A_AMOUNT: u64 = 1_000_000_000;
 const INITIAL_USER_TOKEN_B_AMOUNT: u64 = 3_000_000_000;
 
-fn main() {
-    loop {
-        fuzz!(|fuzz_data: FuzzData| { run_fuzz(fuzz_data) });
-    }
-}
 
 fn run_fuzz(fuzz_data: FuzzData) {
     let trade_fee_numerator = 25;

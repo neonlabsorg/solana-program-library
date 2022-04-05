@@ -12,11 +12,11 @@ no-entrypoint = []
 test-bpf = []
 
 [dependencies]
-solana-program = "1.7.4"
+solana-program = { path = "../../../solana/sdk/program" }
 
 [dev-dependencies]
-solana-program-test = "1.7.4"
-solana-sdk = "1.7.4"
+solana-program-test = { path = "../../../solana/program-test" }
+solana-sdk = { path = "../../../solana/sdk" }
 
 [lib]
 crate-type = ["cdylib", "lib"]

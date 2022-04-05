@@ -12,14 +12,14 @@ version = "2.0.13"
 clap = "2.33.3"
 console = "0.14.0"
 serde_json = "1.0.62"
-solana-account-decoder = "=1.7.4"
-solana-clap-utils = "=1.7.4"
-solana-cli-config = "=1.7.4"
-solana-cli-output = "=1.7.4"
-solana-client = "=1.7.4"
-solana-logger = "=1.7.4"
-solana-remote-wallet = "=1.7.4"
-solana-sdk = "=1.7.4"
+solana-account-decoder = { path = "../../../solana/account-decoder" }
+solana-clap-utils = { path = "../../../solana/clap-utils" }
+solana-cli-config = { path = "../../../solana/cli-config" }
+solana-cli-output = { path = "../../../solana/cli-output" }
+solana-client = { path = "../../../solana/client" }
+solana-logger = { path = "../../../solana/logger" }
+solana-remote-wallet = { path = "../../../solana/remote-wallet" }
+solana-sdk = { path = "../../../solana/sdk" }
 spl-token = { version = "3.2", path="../program", features = [ "no-entrypoint" ] }
 spl-associated-token-account = { version = "1.0", path="../../associated-token-account/program", features = [ "no-entrypoint" ] }
 spl-memo = { version = "3.0.1", path="../../memo/program", features = ["no-entrypoint"] }
